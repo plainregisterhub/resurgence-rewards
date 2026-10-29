@@ -78,3 +78,53 @@
  .allocation-rights-heading{align-items:flex-start}
  .allocation-muted{max-width:120px}
 }
+
+
+/* Public participant registration portal */
+.participant-shell{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px;background:radial-gradient(ellipse at 50% 0%,#13283a 0%,#090d14 65%)}
+.participant-card{width:min(100%,560px);padding:30px;border:1px solid #253548;border-radius:18px;background:rgba(16,23,34,.96);box-shadow:0 26px 100px #0007}
+.participant-back{display:inline-flex;align-items:center;gap:7px;color:#91a6bc;text-decoration:none;font-size:11px;margin-bottom:23px}
+.participant-back:hover{color:var(--cyan)}
+.participant-brand{display:flex;align-items:center;gap:11px}
+.participant-brand-mark{display:grid;place-items:center;width:42px;height:42px;border:1px solid #32637a;background:#112b3a;color:var(--cyan);border-radius:12px}
+.participant-brand>div:last-child span,.participant-brand small{display:block}
+.participant-brand>div:last-child span{font:800 12px Manrope,sans-serif;letter-spacing:.13em}
+.participant-brand small{margin-top:4px;color:#8191a7;font-size:9px;letter-spacing:.16em}
+.participant-eyebrow{margin-top:31px}
+.participant-card h1{margin:0 0 9px;font:800 30px Manrope,sans-serif;letter-spacing:-.045em}
+.participant-intro{margin:0;color:#90a0b4;font-size:12px;line-height:1.75}
+.participant-steps{display:grid;gap:0;margin:23px 0 20px;border:1px solid #253344;border-radius:11px;background:#0d151f}
+.participant-step{display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border-bottom:1px solid #202b39}
+.participant-step:last-child{border-bottom:0}
+.participant-step>span{display:grid;place-items:center;width:27px;height:27px;flex-shrink:0;border:1px solid #2c5368;border-radius:7px;background:#132b3b;color:#8bdcff;font:11px 'DM Mono',monospace}
+.participant-step strong,.participant-step small{display:block}
+.participant-step strong{margin:1px 0 5px;color:#dbe6f2;font-size:11px}
+.participant-step small{color:#8798ad;font-size:10px;line-height:1.6}
+.participant-wallet{display:flex;align-items:center;gap:10px;padding:13px;margin:15px 0;border:1px solid #2a394a;border-radius:10px;background:#0b121b;min-width:0}
+.participant-wallet-icon{display:grid;place-items:center;width:34px;height:34px;flex-shrink:0;border:1px solid #2b4558;border-radius:9px;background:#152431;color:#83d5ff}
+.participant-wallet-copy{display:block;min-width:0;flex:1}
+.participant-wallet-copy strong,.participant-wallet-copy span{display:block;overflow-wrap:anywhere}
+.participant-wallet-copy strong{color:#d2deec;font-size:11px}
+.participant-wallet-copy span{margin-top:5px;color:#8497ad;font:10px 'DM Mono',monospace}
+.participant-connection{padding:5px 6px;border:1px solid #334153;border-radius:5px;color:#90a2b7;font:8px 'DM Mono',monospace;letter-spacing:.04em}
+.participant-connection.connected{border-color:#285541;background:#14271f;color:#8ae0b5}
+.participant-main-button{min-height:45px;margin-top:2px;font-size:12px}
+.participant-change-wallet{display:block;margin:12px auto 0;padding:5px;border:0;background:transparent;color:#8ca2b8;font-size:10px}
+.participant-change-wallet:hover{color:#c9eaff}
+.participant-alert{display:flex;align-items:flex-start;gap:9px;padding:11px 12px;margin-top:13px;border-radius:9px;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.participant-alert svg{flex-shrink:0;margin-top:1px}
+.participant-alert-error{border:1px solid #64333c;background:#321d24;color:#ffc4c4}
+.participant-alert-success{border:1px solid #245b48;background:#102b24;color:#a9f4d2}
+.participant-status{margin-top:13px;padding:13px;border:1px solid #2a4557;border-radius:9px;background:#10202c}
+.participant-status>div{display:flex;align-items:center;gap:8px;color:#bdeaff}
+.participant-status strong{font-size:11px}
+.participant-status p{margin:9px 0 0;color:#9aacc0;font-size:10px;line-height:1.6}
+.participant-status small{display:block;margin-top:8px;color:#8296ac;font-size:9px}
+.participant-safety{display:flex;gap:9px;margin-top:20px;padding-top:16px;border-top:1px solid #273343;color:#8da0b6;font-size:10px;line-height:1.7}
+.participant-safety svg{flex-shrink:0;margin-top:2px;color:#70d6ad}
+.participant-safety strong{color:#c2f0dc}
+.participant-footnote{margin:12px 0 0;color:#62768e;font-size:9px;line-height:1.7}
+.participant-entry{margin:15px 0 0;text-align:center;color:#8295aa;font-size:11px}
+.participant-entry a{color:#8bdcff;text-decoration:none;font-weight:700}
+.participant-entry a:hover{text-decoration:underline}
+@media(max-width:500px){.participant-shell{padding:15px 10px}.participant-card{padding:23px 17px;border-radius:14px}.participant-card h1{font-size:27px}.participant-step{padding:11px 10px}.participant-connection{font-size:7px}}
