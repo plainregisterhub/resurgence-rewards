@@ -3,5 +3,6 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  base: process.env.GITHUB_ACTIONS ? "/resurgence-rewards/" : "/",
+  // This repository is hosted at https://<owner>.github.io/resurgence-rewards/
+  base: "/resurgence-rewards/",
 });
