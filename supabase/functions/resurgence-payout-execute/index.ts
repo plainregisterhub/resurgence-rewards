@@ -340,14 +340,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: "This payout run is already being processed. Refresh the ledger before retrying.", status: claim?.run_status ?? "UNKNOWN" }, 409, origin);
     }
 
-    const { error: clusterUpdateError } = await supabase.from("multisplit_runs")
-      .update({ payout_cluster: cluster })
-      .eq("id", runId);
-    if (clusterUpdateError) throw new Error("Could not save payout cluster: " + clusterUpdateError.message);
-    run.payout_cluster = cluster;
-
     let confirmedThisCall = 0;
     try {
+      const { error: clusterUpdateError } = await supabase.from("multisplit_runs")
+        .update({ payout_cluster: cluster })
+        .eq("id", runId);
+      if (clusterUpdateError) throw new Error("Could not save payout cluster: " + clusterUpdateError.message);
+      run.payout_cluster = cluster;
       const { data: itemRows, error: itemError } = await supabase.from("multisplit_items")
         .select("id,participant_id,wallet_address,amount_lamports,status,transaction_signature")
         .eq("run_id", runId)
@@ -368,7 +367,7 @@ Deno.serve(async (req: Request) => {
         if (amount <= 0n) throw new Error("Every recipient amount must be greater than zero.");
         return sum + amount;
       }, 0n);
-      if (totalUnits !== BigInt(String(run.total_planned_lamports))) {
+      if (totalUnits !== toBaseUnits(run.total_planned_lamports, 0)) {
         throw new Error("Recipient amounts do not equal the payout plan total. No payments were sent.");
       }
 
