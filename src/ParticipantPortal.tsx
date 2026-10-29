@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
 import { ArrowLeft, CheckCircle2, CircleAlert, Clock3, LockKeyhole, ShieldCheck, Wallet } from "lucide-react";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import {
@@ -158,7 +157,8 @@ export default function ParticipantPortal() {
         }
         setWalletAddress(callback.walletAddress);
         if (callback.type === "connected") {
-          setNotice("Phantom connected successfully. Next, sign the verification message to submit your application.");
+          setNotice("Phantom connected. Opening the wallet-ownership signature; your application will submit automatically.");
+          await startDeepLinkVerification(callback.walletAddress);
           return;
         }
         if (!supabaseConfigured) {
@@ -175,52 +175,75 @@ export default function ParticipantPortal() {
     })();
   }, []);
 
-  async function connectWallet() {
-    setError("");
-    setNotice("");
-    setApplicationStatus("");
-    const provider = getWalletProvider();
-    if (!provider) {
-      try {
-        setBusy(true);
-        setError("");
-        setNotice("Switching to Phantom to connect your wallet. You will return here to continue.");
-        const launched = launchPhantomConnect();
-        if (!launched) {
-          setBusy(false);
-          setNotice("");
-          setError("Your browser blocked the Phantom window. Allow pop-ups for this site, then tap Connect Wallet again.");
-          return;
-        }
-        window.setTimeout(() => {
-          setBusy((current) => current ? false : current);
-          setNotice((current) => current.startsWith("Switching to Phantom")
-            ? "Still on this page? Phantom may not have opened or returned. Tap Connect Wallet to retry; you do not need to refresh."
-            : current);
-        }, 12000);
-      } catch (cause) {
-        setBusy(false);
-        setNotice("");
-        setError(cause instanceof Error ? cause.message : "Could not open Phantom. Please try again.");
-      }
+  async function requestWalletChallenge(address: string) {
+    const { data: challenge, error: challengeError } = await supabase.functions.invoke(
+      "resurgence-participant-challenge",
+      { body: { walletAddress: address } },
+    );
+    if (challengeError) throw new Error(await readFunctionError(challengeError));
+    if (!challenge?.nonce || !challenge?.message) {
+      throw new Error("The verification service returned an incomplete challenge. Please retry.");
+    }
+    return { nonce: String(challenge.nonce), message: String(challenge.message) };
+  }
+
+  async function startDeepLinkVerification(address: string) {
+    if (!supabaseConfigured) {
+      throw new Error("The application service is not configured. Contact the event administrator.");
+    }
+    const connection = getPhantomConnection();
+    if (!connection || connection.walletAddress !== address) {
+      throw new Error("The Phantom session is missing. Please tap Connect Wallet to reconnect.");
+    }
+    const challenge = await requestWalletChallenge(address);
+    setNotice("Phantom connected. Opening the wallet-ownership signature; no blockchain transaction will be made.");
+    const launched = launchPhantomSignMessage(challenge.message, connection, challenge.nonce);
+    if (!launched) throw new Error("Could not open Phantom's signature request. Tap Connect Wallet to retry.");
+  }
+
+  async function authenticateAndSubmit(address: string) {
+    if (!supabaseConfigured) {
+      setError("The application service is not configured yet. Please contact the event administrator.");
       return;
     }
     setBusy(true);
+    setError("");
+    setNotice("Verifying wallet ownership and submitting your application…");
     try {
-      const connection = await provider.connect();
-      const publicKey = connection.publicKey ?? provider.publicKey;
-      if (!publicKey) throw new Error("The wallet did not return a public address. Please reconnect.");
-      setWalletAddress(publicKey.toBase58());
-      setNotice("Wallet connected. Next, sign the verification message to submit your application.");
+      const provider = getWalletProvider();
+      const deepLinkConnection = getPhantomConnection();
+
+      if (provider) {
+        const currentAddress = provider.publicKey?.toBase58() ?? "";
+        if (currentAddress && currentAddress !== address) {
+          throw new Error("The connected wallet changed. Reconnect the wallet you want to register.");
+        }
+        const challenge = await requestWalletChallenge(address);
+        if (typeof provider.signMessage !== "function") {
+          throw new Error("This wallet cannot sign the verification message. Open this page inside Phantom and retry.");
+        }
+        const signed = await provider.signMessage(new TextEncoder().encode(challenge.message), "utf8");
+        const signature = signed instanceof Uint8Array ? signed : signed.signature;
+        if (!(signature instanceof Uint8Array) || signature.length !== 64) {
+          throw new Error("The wallet returned an invalid signature. Please retry.");
+        }
+        await submitSignedApplication(address, challenge.nonce, signature);
+        return;
+      }
+
+      if (!deepLinkConnection || deepLinkConnection.walletAddress !== address) {
+        throw new Error("Your Phantom session is not available. Tap Connect Wallet to reconnect.");
+      }
+      await startDeepLinkVerification(address);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Wallet connection was cancelled or failed.");
+      setError(cause instanceof Error ? cause.message : "The application could not be submitted. Please try again.");
+      setNotice("");
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitApplication(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function connectWallet() {
     setError("");
     setNotice("");
     setApplicationStatus("");
@@ -231,72 +254,36 @@ export default function ParticipantPortal() {
     }
 
     const provider = getWalletProvider();
-    const deepLinkConnection = getPhantomConnection();
-    if ((!provider || typeof provider.signMessage !== "function") &&
-        (!deepLinkConnection || deepLinkConnection.walletAddress !== walletAddress)) {
-      setError("Your Phantom session is not available. Please connect your wallet again.");
+    if (!provider) {
+      setBusy(true);
+      setNotice("Opening Phantom to connect and verify your wallet. Your application will submit automatically when you return.");
+      try {
+        const launched = launchPhantomConnect();
+        if (!launched) throw new Error("Could not open Phantom. Please retry.");
+        window.setTimeout(() => {
+          setBusy((current) => current ? false : current);
+          setNotice((current) => current.startsWith("Opening Phantom to connect")
+            ? "Still on this page? Phantom may not have opened or returned. Tap Connect Wallet to retry."
+            : current);
+        }, 12000);
+      } catch (cause) {
+        setBusy(false);
+        setNotice("");
+        setError(cause instanceof Error ? cause.message : "Could not open Phantom. Please try again.");
+      }
       return;
     }
 
     setBusy(true);
     try {
-      let currentAddress = "";
-      if (provider) {
-        currentAddress = provider.publicKey?.toBase58() ?? "";
-        if (currentAddress !== walletAddress) {
-          const connection = await provider.connect();
-          currentAddress = (connection.publicKey ?? provider.publicKey)?.toBase58() ?? "";
-        }
-        if (currentAddress !== walletAddress) {
-          throw new Error("The connected wallet changed. Please reconnect the wallet you want to register.");
-        }
-      } else {
-        currentAddress = deepLinkConnection?.walletAddress ?? "";
-        if (currentAddress !== walletAddress) {
-          throw new Error("The connected wallet changed. Please reconnect the wallet you want to register.");
-        }
-      }
-
-      const { data: challenge, error: challengeError } = await supabase.functions.invoke(
-        "resurgence-participant-challenge",
-        { body: { walletAddress } },
-      );
-      if (challengeError) throw new Error(await readFunctionError(challengeError));
-      if (!challenge?.nonce || !challenge?.message) {
-        throw new Error("The verification service returned an incomplete challenge. Please retry.");
-      }
-
-      if (!provider || typeof provider.signMessage !== "function") {
-        if (!deepLinkConnection) throw new Error("The Phantom session is missing. Please reconnect.");
-        setNotice("Opening Phantom to request your verification signature. No transaction or SOL transfer will be made.");
-        const launched = launchPhantomSignMessage(String(challenge.message), deepLinkConnection, String(challenge.nonce));
-        if (!launched) {
-          setBusy(false);
-          setNotice("");
-          setError("Your browser blocked the Phantom window. Allow pop-ups for this site, then try signing again.");
-          return;
-        }
-        window.setTimeout(() => {
-          setBusy((current) => current ? false : current);
-          setNotice((current) => current.startsWith("Opening Phantom to request")
-            ? "Still waiting for Phantom? If it did not open or return, tap Sign & Submit Application to retry."
-            : current);
-        }, 12000);
-        return;
-      }
-
-      if (typeof provider.signMessage !== "function") {
-        throw new Error("This wallet cannot sign verification messages. Please connect Phantom or another compatible Solana wallet.");
-      }
-      const messageBytes = new TextEncoder().encode(challenge.message as string);
-      const signed = await provider.signMessage(messageBytes, "utf8");
-      const signature = signed instanceof Uint8Array ? signed : signed.signature;
-      if (!(signature instanceof Uint8Array) || signature.length !== 64) {
-        throw new Error("The wallet returned an invalid signature. Please retry.");
-      }
-      await submitSignedApplication(walletAddress, String(challenge.nonce), signature);
+      const connection = await provider.connect();
+      const address = (connection.publicKey ?? provider.publicKey)?.toBase58() ?? "";
+      if (!address) throw new Error("Phantom did not return a wallet address. Please reconnect.");
+      setWalletAddress(address);
+      await authenticateAndSubmit(address);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The application could not be submitted. Please try again.");
+      setError(cause instanceof Error ? cause.message : "Wallet connection was cancelled or failed.");
+      setNotice("");
     } finally {
       setBusy(false);
     }
@@ -321,25 +308,12 @@ export default function ParticipantPortal() {
 
         <p className="eyebrow participant-eyebrow">CAMPAIGN 2026</p>
         <h1>Register your wallet.</h1>
-        <p className="participant-intro">{getWalletProvider() ? "Wallet support detected. Connect or restore your wallet here, then sign the verification message without leaving Phantom's browser." : "Connect your Solana wallet and prove ownership with a signature. On mobile, open this portal inside Phantom first so you can connect and sign in one browser. Your application then goes to the review queue."}</p>
+        <p className="participant-intro">{getWalletProvider() ? "Connect your Solana wallet. Phantom will handle the wallet-ownership signature, then your application will be submitted automatically for admin review." : "Tap Connect Wallet to open Phantom. Once connected, the verification signature and application submission continue automatically; no separate portal submission button is needed."}</p>
 
-        {!getWalletProvider() && (
-          <a
-            className="button button-primary button-full participant-main-button"
-            href={`https://phantom.app/ul/browse/${encodeURIComponent((() => {
-              const target = new URL(window.location.href);
-              target.searchParams.set("view", "participant");
-              ["phantom_callback", "phantom_state", "phantom_encryption_public_key", "nonce", "data", "errorCode", "errorMessage"].forEach((key) => target.searchParams.delete(key));
-              return target.toString();
-            })())}?ref=${encodeURIComponent(window.location.origin)}`}
-          >
-            <Wallet size={16} /> Open Portal Inside Phantom
-          </a>
-        )}
-        
+
         <div className="participant-steps">
-          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>On mobile, open this page inside Phantom to avoid repeated app switching.</small></div></div>
-          <div className="participant-step"><span>02</span><div><strong>Sign verification message</strong><small>Proves wallet control only. No transaction is created and no SOL is transferred.</small></div></div>
+          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>One button starts the wallet connection.</small></div></div>
+          <div className="participant-step"><span>02</span><div><strong>Sign verification message</strong><small>Phantom confirms wallet ownership; no transaction or transfer is created.</small></div></div>
           <div className="participant-step"><span>03</span><div><strong>Admin review</strong><small>Applications start as Pending. Approval does not guarantee funds; allocation rights are limited to 125 participants.</small></div></div>
         </div>
 
@@ -352,19 +326,10 @@ export default function ParticipantPortal() {
           <span className={walletAddress ? "participant-connection connected" : "participant-connection"}>{walletAddress ? "CONNECTED" : "WAITING"}</span>
         </div>
 
-        {!walletAddress ? (
+        {!applicationStatus && (
           <button className="button button-primary button-full participant-main-button" type="button" onClick={() => void connectWallet()} disabled={busy || !supabaseConfigured}>
-            <Wallet size={16} /> {busy ? "Opening Phantom…" : "Connect Wallet"}
+            <Wallet size={16} /> {busy ? "Connecting & verifying…" : error && walletAddress ? "Retry wallet verification" : "Connect Wallet"}
           </button>
-        ) : (
-          <form onSubmit={submitApplication}>
-            <button className="button button-primary button-full participant-main-button" type="submit" disabled={busy}>
-              <LockKeyhole size={16} /> {busy ? "Verifying wallet…" : "Sign & Submit Application"}
-            </button>
-            <button className="participant-change-wallet" type="button" disabled={busy} onClick={() => { setWalletAddress(""); setNotice(""); setError(""); setApplicationStatus(""); }}>
-              Use a different wallet
-            </button>
-          </form>
         )}
 
         {error && <div className="participant-alert participant-alert-error"><CircleAlert size={17} /><span>{error}</span></div>}
