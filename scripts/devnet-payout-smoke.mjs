@@ -130,7 +130,8 @@ async function verifyTokenRecipients(mint) {
 }
 
 async function main() {
-  console.log(`Devnet payout smoke test: ${RECIPIENT_COUNT} ephemeral recipient wallets`);
+  const isLocal = RPC_URL.includes("localhost") || RPC_URL.includes("127.0.0.1");
+  console.log(`${isLocal ? "Local validator" : "Solana Devnet"} payout smoke test: ${RECIPIENT_COUNT} ephemeral recipient wallets`);
   console.log(`RPC: ${RPC_URL}`);
   console.log("No production wallet, production signer, or user funds are used.");
   await fundDevnetPayer();
@@ -198,7 +199,7 @@ async function main() {
   console.log(`PASS: all ${RECIPIENT_COUNT} SPL token recipient balances verified`);
   console.log(`PASS: ${signatures.length} transactions confirmed on Devnet`);
   console.log(`Temporary Devnet mint: ${mint.toBase58()}`);
-  console.log("Finished. All ephemeral keypairs and test funds are separate from Mainnet.");
+  console.log(`Finished. All ephemeral keypairs and test funds are separate from Mainnet.${isLocal ? " This is a local-validator integration test, not a public Devnet test." : ""}`);
 }
 
 main().catch((error) => {
