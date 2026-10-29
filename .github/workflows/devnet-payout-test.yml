@@ -23,7 +23,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - name: Install
         run: npm install
       - name: Run Devnet payouts to 125 temporary wallets
