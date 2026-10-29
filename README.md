@@ -19,7 +19,7 @@ A secure admin portal foundation for participant review, creator-fee allocation 
 Never put a Supabase service-role key, wallet secret key, or seed phrase in this frontend or GitHub.
 
 ## Database
-The existing Supabase schema is preserved. The migration in `supabase/migrations/` adds admin-only policies and supporting indexes. Review the SQL before applying it to another project.
+The existing Supabase schema is preserved. The migrations in `supabase/migrations/` add admin-only policies, supporting indexes, and campaign-scoped wallet uniqueness. Review the SQL before applying them to another project.
 
 ## Current functionality
 - Admin login and admin allowlist check.
