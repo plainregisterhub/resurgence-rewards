@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Activity, ArrowDownRight, ArrowUpRight, Check, CircleAlert, Clock3,
-  Coins, ExternalLink, LogOut, Plus, RefreshCw, ShieldCheck, Users, Wallet, X,
+  Coins, ExternalLink, LogOut, RefreshCw, ShieldCheck, Users, Wallet, X,
 } from "lucide-react";
 import { supabase, supabaseConfigured } from "./lib/supabase";
+import ParticipantPortal from "./ParticipantPortal";
 import MultisplitPanel from "./MultisplitPanel";
 
 type Participant = {
@@ -61,8 +62,6 @@ function App() {
   const [dataBusy, setDataBusy] = useState(false);
   const [dataError, setDataError] = useState("");
   const [filter, setFilter] = useState<"ALL" | Participant["status"]>("ALL");
-  const [walletInput, setWalletInput] = useState("");
-  const [addingWallet, setAddingWallet] = useState(false);
   const [actionId, setActionId] = useState("");
   const [toast, setToast] = useState("");
 
@@ -168,55 +167,25 @@ function App() {
       .eq("status", "PENDING");
     if (error) {
       setDataError(error.message);
+    } else if (status === "APPROVED") {
+      const { data: rightsData, error: rightsError } = await supabase.rpc("sync_resurgence_allocation_rights");
+      if (rightsError) {
+        setToast(`Wallet approved, but allocation rights need attention: ${rightsError.message}`);
+      } else {
+        const rights = Array.isArray(rightsData) ? rightsData[0] : rightsData;
+        setToast(rights?.added_count > 0
+          ? `Wallet approved and 0.2% allocation right granted (${rights.active_count}/125 active).`
+          : "Wallet approved. No new allocation right was granted; check available slots.");
+      }
+      await loadData();
     } else {
-      setToast(`Wallet ${status.toLowerCase()}.`);
+      setToast("Wallet rejected.");
       await loadData();
     }
     setActionId("");
   }
 
-  async function addParticipant(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const wallet = walletInput.trim();
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)) {
-      setDataError("Enter a Solana address using Base58 characters (32–44 characters).");
-      return;
-    }
-    setAddingWallet(true);
-    setDataError("");
-    try {
-      const { data: existing, error: lookupError } = await supabase
-        .from("participants")
-        .select("id")
-        .eq("campaign_id", "resurgence-2026")
-        .eq("wallet_address", wallet)
-        .maybeSingle();
-      if (lookupError) {
-        setDataError(lookupError.message);
-        return;
-      }
-      if (existing) {
-        setDataError("This wallet is already registered for this campaign.");
-        return;
-      }
-      const { error } = await supabase.from("participants").insert({
-        wallet_address: wallet,
-        campaign_id: "resurgence-2026",
-        status: "PENDING",
-      });
-      if (error) {
-        setDataError(error.code === "23505" ? "This wallet is already registered for this campaign." : error.message);
-      } else {
-        setWalletInput("");
-        setToast("Wallet added to the pending review queue.");
-        await loadData();
-      }
-    } catch {
-      setDataError("Unable to add the wallet right now. Check the connection and try again.");
-    } finally {
-      setAddingWallet(false);
-    }
-  }
+  if (new URLSearchParams(window.location.search).get("view") === "participant") return <ParticipantPortal />;
 
   if (!supabaseConfigured) {
     return <main className="center-screen"><section className="auth-card">
@@ -243,6 +212,7 @@ function App() {
           {authError && <div className="alert alert-error"><CircleAlert size={16} />{authError}</div>}
           <button className="button button-primary button-full" type="submit" disabled={loginBusy}>{loginBusy ? "Signing in…" : "Sign in securely"}</button>
         </form>
+        <p className="participant-entry">Joining the event? <a href="?view=participant">Apply with your Solana wallet</a></p>
         <div className="security-note"><ShieldCheck size={16} /><span>Admin access is allowlisted in Supabase. The frontend cannot grant itself admin privileges.</span></div>
       </section>
       <footer className="page-footer">THE RESURGENCE <span>•</span> REWARDS PORTAL</footer>
@@ -263,6 +233,7 @@ function App() {
       <div className="brand-row sidebar-brand"><div className="brand-mark"><ShieldCheck size={22} /></div><div><span className="brand-name">THE RESURGENCE</span><span className="brand-subtitle">REWARDS OPERATIONS</span></div></div>
       <div className="side-label">WORKSPACE</div>
       <a className="nav-item nav-item-active" href="#overview"><Activity size={17} /> Overview</a>
+      <a className="nav-item" href="?view=participant"><Wallet size={17} /> Participant portal</a>
       <a className="nav-item" href="#participants"><Users size={17} /> Participants <span className="nav-count">{counts.pending}</span></a>
       <a className="nav-item" href="#ledger"><Coins size={17} /> Allocation ledger</a>
       <a className="nav-item" href="#treasury"><Wallet size={17} /> Treasury &amp; multisplit</a>
@@ -298,7 +269,6 @@ function App() {
         <div className="content-grid">
           <section id="participants" className="panel participants-panel">
             <div className="panel-heading"><div><h2>Participant review</h2><p>Review each wallet once before it enters the eligible set.</p></div><span className="panel-count">{counts.pending} pending</span></div>
-            <form className="add-wallet-form" onSubmit={addParticipant}><div className="input-with-icon"><Wallet size={16} /><input aria-label="Solana wallet address" value={walletInput} onChange={(e) => setWalletInput(e.target.value)} placeholder="Add Solana wallet address…" minLength={32} maxLength={44} /></div><button className="button button-secondary" type="submit" disabled={addingWallet || !walletInput.trim()}><Plus size={16} />{addingWallet ? "Adding…" : "Add wallet"}</button></form>
             <div className="filter-row">{(["ALL", "PENDING", "APPROVED", "REJECTED"] as const).map((item) => <button key={item} className={filter === item ? "filter-pill filter-pill-active" : "filter-pill"} onClick={() => setFilter(item)}>{item === "ALL" ? "All wallets" : item.charAt(0) + item.slice(1).toLowerCase()}{item === "PENDING" ? <span>{counts.pending}</span> : null}</button>)}</div>
             <div className="table-wrap"><table><thead><tr><th>WALLET</th><th>SUBMITTED</th><th>STATUS</th><th className="right-align">REVIEW</th></tr></thead><tbody>
               {dataBusy && participants.length === 0 ? <tr><td colSpan={4} className="empty-cell">Loading wallet records…</td></tr> : filteredParticipants.length === 0 ? <tr><td colSpan={4} className="empty-cell"><div className="empty-icon"><Users size={19} /></div><strong>No wallets in this view</strong><span>New entries will appear here when added.</span></td></tr> : filteredParticipants.map((person) => <tr key={person.id}><td><div className="wallet-cell"><span className="wallet-token"><Wallet size={14} /></span><span><strong>{shortWallet(person.wallet_address)}</strong><small>{person.campaign_id}</small></span><button className="copy-link" title="Open Solscan address" onClick={() => window.open(`https://solscan.io/account/${encodeURIComponent(person.wallet_address)}`, "_blank", "noopener,noreferrer")}><ExternalLink size={13} /></button></div></td><td className="date-cell">{dateLabel(person.submitted_at)}</td><td><Badge value={person.status} /></td><td className="right-align">{person.status === "PENDING" ? <div className="review-actions"><button className="review-approve" disabled={actionId === person.id} onClick={() => void reviewParticipant(person, "APPROVED")} title="Approve wallet" aria-label="Approve wallet"><Check size={15} /></button><button className="review-reject" disabled={actionId === person.id} onClick={() => void reviewParticipant(person, "REJECTED")} title="Reject wallet" aria-label="Reject wallet"><X size={15} /></button></div> : <span className="reviewed-label">{person.reviewed_at ? "Reviewed" : "—"}</span>}</td></tr>)}
