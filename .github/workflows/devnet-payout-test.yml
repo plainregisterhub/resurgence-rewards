@@ -1,0 +1,32 @@
+name: Devnet 125-recipient payout smoke test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/devnet-payout-smoke.mjs"
+      - "package.json"
+      - ".github/workflows/devnet-payout-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  devnet-payout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install
+        run: npm install
+      - name: Run Devnet payouts to 125 temporary wallets
+        run: npm run test:devnet-payout
+        env:
+          SOLANA_DEVNET_RPC_URL: https://api.devnet.solana.com
