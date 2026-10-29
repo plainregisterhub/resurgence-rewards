@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { ArrowLeft, CheckCircle2, CircleAlert, Clock3, LockKeyhole, ShieldCheck, Wallet } from "lucide-react";
 import { supabase, supabaseConfigured } from "./lib/supabase";
+import {
+  consumePhantomCallback,
+  getPhantomConnection,
+  launchPhantomConnect,
+  launchPhantomSignMessage,
+} from "./lib/phantomDeepLink";
 
 type WalletPublicKey = { toBase58(): string };
 type WalletSignResult = Uint8Array | { signature: Uint8Array };
@@ -50,6 +56,62 @@ export default function ParticipantPortal() {
   const [notice, setNotice] = useState("");
   const [applicationStatus, setApplicationStatus] = useState("");
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
+  const callbackHandled = useRef(false);
+
+  async function submitSignedApplication(address: string, nonce: string, signature: Uint8Array) {
+    const { data: result, error: submitError } = await supabase.functions.invoke(
+      "resurgence-participant-submit",
+      { body: { walletAddress: address, nonce, signature: toBase64(signature) } },
+    );
+    if (submitError) throw new Error(await readFunctionError(submitError));
+    if (!result?.success || !result?.participant?.status) {
+      throw new Error("The application response was incomplete. Please retry.");
+    }
+    const status = String(result.participant.status).toUpperCase();
+    setApplicationStatus(status);
+    setAlreadyRegistered(Boolean(result.alreadyRegistered));
+    setNotice(
+      result.alreadyRegistered
+        ? `This wallet is already registered. Current status: ${status.toLowerCase()}.`
+        : "Application submitted successfully. Your status is Pending while the admin reviews it.",
+    );
+  }
+
+  useEffect(() => {
+    if (callbackHandled.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("phantom_callback")) return;
+    callbackHandled.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
+
+    void (async () => {
+      try {
+        const callback = await consumePhantomCallback();
+        if (!callback) return;
+        if (callback.type === "error") {
+          setError(callback.message);
+          return;
+        }
+        setWalletAddress(callback.walletAddress);
+        if (callback.type === "connected") {
+          setNotice("Phantom connected successfully. Next, sign the verification message to submit your application.");
+          return;
+        }
+        if (!supabaseConfigured) {
+          setError("The application service is not configured. Your signature was not submitted; contact the event administrator.");
+          return;
+        }
+        setNotice("Signature received. Submitting your application securely…");
+        await submitSignedApplication(callback.walletAddress, callback.challengeNonce, callback.signature);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Unable to finish the Phantom request. Please try again.");
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, []);
 
   async function connectWallet() {
     setError("");
@@ -57,7 +119,15 @@ export default function ParticipantPortal() {
     setApplicationStatus("");
     const provider = getWalletProvider();
     if (!provider) {
-      setError("No compatible Solana wallet was detected. Open this portal inside the Phantom app browser, or install a compatible Solana wallet and try again.");
+      try {
+        setBusy(true);
+        setNotice("Opening Phantom. Approve the connection there, then return here to continue.");
+        launchPhantomConnect();
+      } catch (cause) {
+        setBusy(false);
+        setNotice("");
+        setError(cause instanceof Error ? cause.message : "Could not open Phantom. Please try again.");
+      }
       return;
     }
     setBusy(true);
@@ -86,20 +156,30 @@ export default function ParticipantPortal() {
     }
 
     const provider = getWalletProvider();
-    if (!provider || typeof provider.signMessage !== "function") {
-      setError("This wallet cannot sign verification messages in the current browser. Open the portal in Phantom or another compatible Solana wallet.");
+    const deepLinkConnection = getPhantomConnection();
+    if ((!provider || typeof provider.signMessage !== "function") &&
+        (!deepLinkConnection || deepLinkConnection.walletAddress !== walletAddress)) {
+      setError("Your Phantom session is not available. Please connect your wallet again.");
       return;
     }
 
     setBusy(true);
     try {
-      let currentAddress = provider.publicKey?.toBase58() ?? "";
-      if (currentAddress !== walletAddress) {
-        const connection = await provider.connect();
-        currentAddress = (connection.publicKey ?? provider.publicKey)?.toBase58() ?? "";
-      }
-      if (currentAddress !== walletAddress) {
-        throw new Error("The connected wallet changed. Please reconnect the wallet you want to register.");
+      let currentAddress = "";
+      if (provider) {
+        currentAddress = provider.publicKey?.toBase58() ?? "";
+        if (currentAddress !== walletAddress) {
+          const connection = await provider.connect();
+          currentAddress = (connection.publicKey ?? provider.publicKey)?.toBase58() ?? "";
+        }
+        if (currentAddress !== walletAddress) {
+          throw new Error("The connected wallet changed. Please reconnect the wallet you want to register.");
+        }
+      } else {
+        currentAddress = deepLinkConnection?.walletAddress ?? "";
+        if (currentAddress !== walletAddress) {
+          throw new Error("The connected wallet changed. Please reconnect the wallet you want to register.");
+        }
       }
 
       const { data: challenge, error: challengeError } = await supabase.functions.invoke(
@@ -107,30 +187,27 @@ export default function ParticipantPortal() {
         { body: { walletAddress } },
       );
       if (challengeError) throw new Error(await readFunctionError(challengeError));
-      if (!challenge?.nonce || !challenge?.message) throw new Error("The verification service returned an incomplete challenge. Please retry.");
+      if (!challenge?.nonce || !challenge?.message) {
+        throw new Error("The verification service returned an incomplete challenge. Please retry.");
+      }
 
+      if (!provider || typeof provider.signMessage !== "function") {
+        if (!deepLinkConnection) throw new Error("The Phantom session is missing. Please reconnect.");
+        setNotice("Opening Phantom to request your verification signature. No transaction or SOL transfer will be made.");
+        launchPhantomSignMessage(String(challenge.message), deepLinkConnection, String(challenge.nonce));
+        return;
+      }
+
+      if (typeof provider.signMessage !== "function") {
+        throw new Error("This wallet cannot sign verification messages. Please connect Phantom or another compatible Solana wallet.");
+      }
       const messageBytes = new TextEncoder().encode(challenge.message as string);
       const signed = await provider.signMessage(messageBytes, "utf8");
       const signature = signed instanceof Uint8Array ? signed : signed.signature;
       if (!(signature instanceof Uint8Array) || signature.length !== 64) {
         throw new Error("The wallet returned an invalid signature. Please retry.");
       }
-
-      const { data: result, error: submitError } = await supabase.functions.invoke(
-        "resurgence-participant-submit",
-        { body: { walletAddress, nonce: challenge.nonce, signature: toBase64(signature) } },
-      );
-      if (submitError) throw new Error(await readFunctionError(submitError));
-      if (!result?.success || !result?.participant?.status) throw new Error("The application response was incomplete. Please retry.");
-
-      const status = String(result.participant.status).toUpperCase();
-      setApplicationStatus(status);
-      setAlreadyRegistered(Boolean(result.alreadyRegistered));
-      setNotice(
-        result.alreadyRegistered
-          ? `This wallet is already registered. Current status: ${status.toLowerCase()}.`
-          : "Application submitted successfully. Your status is Pending while the admin reviews it.",
-      );
+      await submitSignedApplication(walletAddress, String(challenge.nonce), signature);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The application could not be submitted. Please try again.");
     } finally {
@@ -157,10 +234,10 @@ export default function ParticipantPortal() {
 
         <p className="eyebrow participant-eyebrow">CAMPAIGN 2026</p>
         <h1>Register your wallet.</h1>
-        <p className="participant-intro">Connect your Solana wallet and prove ownership with a signature. Your application will be sent directly to the review queue.</p>
+        <p className="participant-intro">Connect your Solana wallet and prove ownership with a signature. On mobile, Connect Wallet opens Phantom automatically when available. Your application is sent directly to the review queue.</p>
 
         <div className="participant-steps">
-          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>Use Phantom or a compatible Solana wallet.</small></div></div>
+          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>Connect directly in a compatible browser or open Phantom from your phone browser.</small></div></div>
           <div className="participant-step"><span>02</span><div><strong>Sign verification message</strong><small>Proves wallet control only. No transaction is created and no SOL is transferred.</small></div></div>
           <div className="participant-step"><span>03</span><div><strong>Admin review</strong><small>Applications start as Pending. Approval does not guarantee funds; allocation rights are limited to 125 participants.</small></div></div>
         </div>
@@ -176,7 +253,7 @@ export default function ParticipantPortal() {
 
         {!walletAddress ? (
           <button className="button button-primary button-full participant-main-button" type="button" onClick={() => void connectWallet()} disabled={busy || !supabaseConfigured}>
-            <Wallet size={16} /> {busy ? "Connecting…" : "Connect Wallet"}
+            <Wallet size={16} /> {busy ? "Opening Phantom…" : "Connect Wallet"}
           </button>
         ) : (
           <form onSubmit={submitApplication}>
