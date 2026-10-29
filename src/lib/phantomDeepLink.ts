@@ -10,6 +10,7 @@ export type PhantomConnection = {
   dappPublicKey: string;
   dappSecretKey: string;
   phantomEncryptionPublicKey: string;
+  storedAt?: number;
 };
 
 type PendingRequest = {
@@ -106,6 +107,11 @@ export function getPhantomConnection(): PhantomConnection | null {
     if (!raw) return null;
     const connection = JSON.parse(raw) as PhantomConnection;
     if (!connection.walletAddress || !connection.session || !connection.dappSecretKey || !connection.phantomEncryptionPublicKey) return null;
+    // Keep the temporary dApp session only long enough for the mobile handoff.
+    if (!connection.storedAt || Date.now() - connection.storedAt > 30 * 60 * 1000) {
+      localStorage.removeItem(CONNECTION_KEY);
+      return null;
+    }
     return connection;
   } catch {
     return null;
@@ -236,6 +242,7 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
         dappPublicKey: pending.dappPublicKey,
         dappSecretKey: pending.dappSecretKey,
         phantomEncryptionPublicKey: phantomPublicKey,
+        storedAt: Date.now(),
       };
       localStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
       localStorage.removeItem(PENDING_KEY);
