@@ -259,8 +259,22 @@ export default function ParticipantPortal() {
 
         <p className="eyebrow participant-eyebrow">CAMPAIGN 2026</p>
         <h1>Register your wallet.</h1>
-        <p className="participant-intro">Connect your Solana wallet and prove ownership with a signature. On mobile, Connect Wallet opens Phantom automatically when available. Your application is sent directly to the review queue.</p>
+        <p className="participant-intro">Connect your Solana wallet and prove ownership with a signature. On mobile, the smoothest option is to open this portal inside Phantom first. Your application is sent directly to the review queue.</p>
 
+        {!getWalletProvider() && (
+          <a
+            className="button button-primary button-full participant-main-button"
+            href={`https://phantom.app/ul/browse/${encodeURIComponent((() => {
+              const target = new URL(window.location.href);
+              target.searchParams.set("view", "participant");
+              ["phantom_callback", "phantom_state", "phantom_encryption_public_key", "nonce", "data", "errorCode", "errorMessage"].forEach((key) => target.searchParams.delete(key));
+              return target.toString();
+            })())}?ref=${encodeURIComponent(window.location.origin)}`}
+          >
+            <Wallet size={16} /> Open Portal Inside Phantom
+          </a>
+        )}
+        
         <div className="participant-steps">
           <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>Connect here or open Phantom from this page.</small></div></div>
           <div className="participant-step"><span>02</span><div><strong>Sign verification message</strong><small>Proves wallet control only. No transaction is created and no SOL is transferred.</small></div></div>
