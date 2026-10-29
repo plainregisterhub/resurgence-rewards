@@ -112,11 +112,18 @@ export function getPhantomConnection(): PhantomConnection | null {
   }
 }
 
-function launch(url: URL): void {
-  window.location.assign(url.toString());
+function launch(url: URL): boolean {
+  // Keep the portal open so a failed app handoff never strands the participant
+  // on phantom.app or leaves the Connect button permanently disabled.
+  const popup = window.open(url.toString(), "_blank");
+  if (popup) {
+    try { popup.opener = null; } catch { /* Browser may make opener read-only. */ }
+    return true;
+  }
+  return false;
 }
 
-export function launchPhantomConnect(): void {
+export function launchPhantomConnect(): boolean {
   const keyPair = nacl.box.keyPair();
   const state = randomState();
   const dappPublicKey = bytesToBase58(keyPair.publicKey);
@@ -135,14 +142,14 @@ export function launchPhantomConnect(): void {
     redirect_link: currentCallbackUrl("connect", state),
     cluster: "mainnet-beta",
   });
-  launch(new URL("https://phantom.app/ul/v1/connect?" + params.toString()));
+  return launch(new URL("https://phantom.app/ul/v1/connect?" + params.toString()));
 }
 
 export function launchPhantomSignMessage(
   message: string,
   connection: PhantomConnection,
   challengeNonce: string,
-): void {
+): boolean {
   const state = randomState();
   savePending({
     action: "sign",
@@ -168,7 +175,7 @@ export function launchPhantomSignMessage(
     redirect_link: currentCallbackUrl("sign", state),
     payload: bytesToBase58(encryptedPayload),
   });
-  launch(new URL("https://phantom.app/ul/v1/signMessage?" + params.toString()));
+  return launch(new URL("https://phantom.app/ul/v1/signMessage?" + params.toString()));
 }
 
 function decryptResponse(data: string, nonce: string, sharedSecret: Uint8Array): string {
