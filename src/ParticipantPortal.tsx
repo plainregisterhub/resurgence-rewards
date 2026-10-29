@@ -94,7 +94,7 @@ export default function ParticipantPortal() {
     const existingAddress = provider.publicKey?.toBase58() ?? "";
     if (existingAddress) {
       setWalletAddress(existingAddress);
-      setNotice("Phantom wallet detected. Review the address below, then sign to submit your application.");
+      setNotice("Wallet detected. Tap Connect Wallet to complete verification and submit your application automatically.");
     }
 
     const handleConnect = (...args: unknown[]) => {
@@ -102,7 +102,7 @@ export default function ParticipantPortal() {
       if (!address) return;
       setWalletAddress(address);
       setError("");
-      setNotice("Wallet connected. You can sign here without leaving Phantom's browser.");
+      setNotice("Wallet connected. Verification will continue automatically when you tap Connect Wallet.");
     };
     const handleAccountChanged = (...args: unknown[]) => {
       const address = args[0] == null ? "" : toAddress(args[0]);
