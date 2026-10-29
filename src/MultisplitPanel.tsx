@@ -409,18 +409,18 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
             <input id="payout-token-decimals" className="treasury-input" type="number" inputMode="numeric" min={0} max={9} step={1} value={assetDecimals} onChange={(event) => setAssetDecimals(event.target.value)} />
           </div>
         )}
-        <label className="treasury-field-label" htmlFor="eligible-fees">Verified eligible fee base ({assetType === "SOL" ? "SOL" : "token units"})</label>
+        <label className="treasury-field-label" htmlFor="eligible-fees">Total eligible reward base ({assetType === "SOL" ? "SOL" : "token units"})</label>
         <input
           id="eligible-fees"
           className="treasury-input allocation-fee-input"
           inputMode="decimal"
           value={eligibleFeeBaseAmount}
           onChange={(event) => setEligibleFeeBaseAmount(event.target.value)}
-          placeholder={assetType === "SOL" ? "e.g. 1.25 SOL" : "e.g. 1250000.5 tokens"}
+          placeholder={assetType === "SOL" ? "Total eligible creator fees, e.g. 1.25 SOL" : "Total reward base in this token, e.g. 1250000 tokens"}
           autoComplete="off"
         />
         <div className="treasury-formula">
-          <span>Rewards Pool maximum <strong>25%</strong></span>
+          <span>Pool cap of this base <strong>25%</strong></span>
           <span>Each active right <strong>0.2%</strong></span>
           <span>Maximum rights <strong>125</strong></span>
         </div>
@@ -432,7 +432,7 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
 
       <div className="treasury-safety">
         <AlertTriangle size={16} />
-        <span><strong>Transfer safety:</strong> payouts are disabled until the server-side signer, cluster and Master Wallet are configured. The executor refuses mismatched signers, checks balances, persists signed batches before broadcast, and records only confirmed transactions. A verified fee base remains an admin-provided input; this portal does not independently prove Pump.fun fee routing.</span>
+        <span><strong>Transfer safety:</strong> payouts are disabled until the server-side signer, cluster and Master Wallet are configured. Enter the total base in the selected asset before applying the 25% pool cap; SOL uses the eligible creator-fee base, while SPL-token payouts use that token's own reward base. The portal does not independently prove Pump.fun fee routing or perform SOL-to-token conversion.</span>
       </div>
 
       {loading && <div className="treasury-loading"><LoaderCircle size={15} className="spin" /> Loading treasury configuration…</div>}
