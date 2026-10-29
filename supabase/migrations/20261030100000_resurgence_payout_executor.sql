@@ -6,7 +6,14 @@ alter table public.multisplit_runs
   add column if not exists asset_mint text,
   add column if not exists asset_decimals integer not null default 9,
   add column if not exists execution_lock_until timestamptz,
-  add column if not exists execution_error text;
+  add column if not exists execution_error text,
+  add column if not exists payout_cluster text;
+
+alter table public.multisplit_runs
+  drop constraint if exists multisplit_runs_payout_cluster_check;
+alter table public.multisplit_runs
+  add constraint multisplit_runs_payout_cluster_check
+  check (payout_cluster is null or payout_cluster in ('devnet', 'mainnet-beta'));
 
 alter table public.multisplit_runs
   drop constraint if exists multisplit_runs_asset_type_check;
@@ -46,6 +53,13 @@ create index if not exists distribution_records_transaction_signature_idx
 
 alter table public.distribution_records
   add column if not exists payout_item_id uuid references public.multisplit_items(id) on delete restrict;
+alter table public.distribution_records
+  add column if not exists cluster text not null default 'mainnet-beta';
+alter table public.distribution_records
+  drop constraint if exists distribution_records_cluster_check;
+alter table public.distribution_records
+  add constraint distribution_records_cluster_check
+  check (cluster in ('devnet', 'mainnet-beta'));
 create unique index if not exists distribution_records_payout_item_id_key
   on public.distribution_records (payout_item_id);
 
@@ -200,13 +214,13 @@ begin
     idempotency_key, campaign_id, eligible_fees_lamports, pool_bps,
     participant_bps, participant_count, total_pool_lamports,
     total_planned_lamports, master_wallet_address, status, created_by,
-    asset_type, asset_mint, asset_decimals, execution_lock_until, execution_error
+    asset_type, asset_mint, asset_decimals, execution_lock_until, execution_error, payout_cluster
   )
   values (
     p_idempotency_key, 'resurgence-2026', p_eligible_fee_base_units,
     v_config.pool_bps, v_config.participant_bps, v_count, v_pool,
     v_total, v_config.master_wallet_address, 'DRAFT', auth.uid(),
-    p_asset_type, p_asset_mint, p_asset_decimals, null, null
+    p_asset_type, p_asset_mint, p_asset_decimals, null, null, null
   )
   returning id into v_run_id;
 
