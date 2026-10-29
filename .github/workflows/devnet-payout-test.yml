@@ -1,4 +1,4 @@
-name: Devnet 125-recipient payout smoke test
+name: Solana 125-recipient payout smoke test
 
 on:
   pull_request:
@@ -7,15 +7,16 @@ on:
       - "scripts/devnet-payout-smoke.mjs"
       - "package.json"
       - ".github/workflows/devnet-payout-test.yml"
+      - "supabase/functions/resurgence-payout-execute/index.ts"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  devnet-payout:
+  payout-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +26,32 @@ jobs:
           node-version: 20
       - name: Install
         run: npm install
-      - name: Run Devnet payouts to 125 temporary wallets
+      - name: Install Solana CLI and local test validator
+        shell: bash
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Start isolated local validator
+        shell: bash
+        run: |
+          solana-test-validator --reset --quiet > /tmp/solana-test-validator.log 2>&1 &
+          echo $! > /tmp/solana-test-validator.pid
+          for attempt in $(seq 1 60); do
+            if solana cluster-version --url http://127.0.0.1:8899 >/dev/null 2>&1; then
+              echo "Local Solana validator is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/solana-test-validator.log
+          exit 1
+      - name: Test SOL and SPL payouts to 125 temporary wallets
         run: npm run test:devnet-payout
         env:
-          SOLANA_DEVNET_RPC_URL: https://api.devnet.solana.com
+          SOLANA_DEVNET_RPC_URL: http://127.0.0.1:8899
+      - name: Stop local validator
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f /tmp/solana-test-validator.pid ]]; then kill "$(cat /tmp/solana-test-validator.pid)" || true; fi
+          if [[ -f /tmp/solana-test-validator.log ]]; then tail -n 80 /tmp/solana-test-validator.log; fi
