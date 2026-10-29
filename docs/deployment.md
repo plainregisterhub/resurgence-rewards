@@ -6,7 +6,7 @@
 - Never expose a service-role key, wallet private key, or seed phrase in client code, GitHub, or browser storage.
 
 ## 2. Apply the database migrations
-Review and apply the files in `supabase/migrations/` in filename order. These migrations install the admin-only RLS policies, move the admin check helper into the non-exposed `private` schema, and prevent duplicate wallet registrations within the same campaign. They do not delete participant or ledger rows. Confirm the Security Advisor and test with both an admin and a non-admin account.
+Review and apply the files in `supabase/migrations/` in filename order. These migrations install the admin-only RLS policies, move the admin check helper into the non-exposed `private` schema, enforce campaign-scoped wallet uniqueness, and remove redundant duplicate constraints. They do not delete participant or ledger rows. Confirm the Security Advisor and test with both an admin and a non-admin account.
 
 ## 3. Create the first admin
 1. In Supabase Authentication, create the designated operator account (or sign up through a trusted auth flow).
