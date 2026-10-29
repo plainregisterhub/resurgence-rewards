@@ -5,7 +5,7 @@ import {
   PublicKey,
   SystemProgram,
   Transaction,
-} from "https://esm.sh/@solana/web3.js@1.98.4?target=deno";
+} from "https://esm.sh/@solana/web3.js@1.98.0?target=deno";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
@@ -176,7 +176,7 @@ function chunks<T>(values: T[], size: number): T[][] {
   return output;
 }
 
-async function requireAdmin(req: Request, supabase: ReturnType<typeof createClient>) {
+async function requireAdmin(req: Request, supabase: any) {
   const header = req.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
   if (!token) throw Object.assign(new Error("A valid admin session is required."), { status: 401 });
@@ -201,7 +201,7 @@ async function getBatchStatus(connection: Connection, signature: string) {
 }
 
 async function saveBatchState(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   batchId: string,
   values: Record<string, unknown>,
 ) {
@@ -212,7 +212,7 @@ async function saveBatchState(
 }
 
 async function settleBatch(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   run: Run,
   batch: Batch,
   items: Item[],
