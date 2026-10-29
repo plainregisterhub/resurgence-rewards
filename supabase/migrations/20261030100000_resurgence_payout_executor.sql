@@ -47,13 +47,13 @@ create index if not exists distribution_records_transaction_signature_idx
 alter table public.distribution_records
   add column if not exists payout_item_id uuid references public.multisplit_items(id) on delete restrict;
 create unique index if not exists distribution_records_payout_item_id_key
-  on public.distribution_records (payout_item_id)
-  where payout_item_id is not null;
+  on public.distribution_records (payout_item_id);
 
 create table if not exists public.resurgence_payout_batches (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references public.multisplit_runs(id) on delete restrict,
   batch_index integer not null check (batch_index >= 0),
+  attempt_no integer not null default 1 check (attempt_no >= 1),
   item_ids uuid[] not null check (cardinality(item_ids) between 1 and 125),
   status text not null default 'SIGNED'
     check (status in ('SIGNED', 'SUBMITTED', 'CONFIRMED', 'FAILED')),
@@ -65,7 +65,7 @@ create table if not exists public.resurgence_payout_batches (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   confirmed_at timestamptz,
-  constraint resurgence_payout_batches_run_index_key unique (run_id, batch_index),
+  constraint resurgence_payout_batches_run_index_attempt_key unique (run_id, batch_index, attempt_no),
   constraint resurgence_payout_batches_signed_data_check
     check (
       (status = 'SIGNED' and signed_transaction is not null and transaction_signature is not null)
