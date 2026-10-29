@@ -39,6 +39,7 @@ type Run = {
   asset_mint: string | null;
   asset_decimals: number;
   execution_lock_until: string | null;
+  payout_cluster: string | null;
 };
 
 type Item = {
@@ -237,6 +238,7 @@ async function settleBatch(
     transaction_signature: batch.transaction_signature,
     payout_item_id: item.id,
     completed_at: new Date().toISOString(),
+    cluster: run.payout_cluster ?? "devnet",
   }));
   const ledger = await supabase.from("distribution_records")
     .upsert(records, { onConflict: "payout_item_id" });
@@ -297,7 +299,7 @@ Deno.serve(async (req: Request) => {
     const connection = new Connection(rpcUrl, { commitment: "confirmed" });
 
     const { data: runData, error: runError } = await supabase.from("multisplit_runs")
-      .select("id,campaign_id,eligible_fees_lamports,pool_bps,participant_bps,participant_count,total_pool_lamports,total_planned_lamports,master_wallet_address,status,asset_type,asset_mint,asset_decimals,execution_lock_until")
+      .select("id,campaign_id,eligible_fees_lamports,pool_bps,participant_bps,participant_count,total_pool_lamports,total_planned_lamports,master_wallet_address,status,asset_type,asset_mint,asset_decimals,execution_lock_until,payout_cluster")
       .eq("id", runId)
       .eq("campaign_id", CAMPAIGN_ID)
       .maybeSingle();
@@ -337,6 +339,12 @@ Deno.serve(async (req: Request) => {
       }
       return json({ error: "This payout run is already being processed. Refresh the ledger before retrying.", status: claim?.run_status ?? "UNKNOWN" }, 409, origin);
     }
+
+    const { error: clusterUpdateError } = await supabase.from("multisplit_runs")
+      .update({ payout_cluster: cluster })
+      .eq("id", runId);
+    if (clusterUpdateError) throw new Error("Could not save payout cluster: " + clusterUpdateError.message);
+    run.payout_cluster = cluster;
 
     let confirmedThisCall = 0;
     try {
@@ -451,6 +459,7 @@ Deno.serve(async (req: Request) => {
               error_message: "The Solana network reported that this transaction failed on-chain; no recipient instructions were committed.",
             });
             currentBatch = { ...currentBatch, status: "FAILED" };
+            latestByIndex.set(batchIndex, currentBatch);
           } else if (currentBatch.status === "CONFIRMED") {
             await settleBatch(supabase, run, currentBatch, items);
             continue;
@@ -565,11 +574,14 @@ Deno.serve(async (req: Request) => {
           throw new Error("A payout batch failed on-chain. It is recorded as failed; retry after checking the ledger.");
         }
 
-        await connection.sendRawTransaction(rawTransaction, {
+        const broadcastSignature = await connection.sendRawTransaction(rawTransaction, {
           skipPreflight: false,
           preflightCommitment: "confirmed",
           maxRetries: 5,
         });
+        if (broadcastSignature !== batchToSend.transaction_signature) {
+          throw new Error("The RPC returned a signature that differs from the persisted signed transaction.");
+        }
         await saveBatchState(supabase, batchToSend.id, { status: "SUBMITTED", error_message: null });
         const latestBlockhash = {
           blockhash: batchToSend.recent_blockhash,
