@@ -207,7 +207,7 @@ begin
     raise exception 'The fee base is too small to allocate at least one base unit per participant.';
   end if;
   if v_total > v_pool then
-    raise exception 'Planned allocation total exceeds the 25% Rewards Pool cap.';
+    raise exception 'Planned allocation total exceeds the 25%% Rewards Pool cap.';
   end if;
 
   insert into public.multisplit_runs (
