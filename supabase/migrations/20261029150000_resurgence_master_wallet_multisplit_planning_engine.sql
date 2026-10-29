@@ -71,7 +71,7 @@ begin
     (campaign_id, master_wallet_address, pool_bps, participant_bps, participant_cap, updated_by, updated_at)
   values
     ('resurgence-2026', p_master_wallet_address, 2500, 20, 125, auth.uid(), now())
-  on conflict (campaign_id) do update
+  on conflict on constraint resurgence_treasury_config_pkey do update
     set master_wallet_address = excluded.master_wallet_address,
         pool_bps = excluded.pool_bps,
         participant_bps = excluded.participant_bps,
