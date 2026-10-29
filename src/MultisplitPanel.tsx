@@ -51,7 +51,7 @@ const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 function solToLamports(value: string): string {
   const normalized = value.trim();
-  if (!/^\\d+(\\.\\d{1,9})?$/.test(normalized)) {
+  if (!/^\d+(\.\d{1,9})?$/.test(normalized)) {
     throw new Error("Enter a SOL amount with up to 9 decimal places.");
   }
   const [whole, fraction = ""] = normalized.split(".");
