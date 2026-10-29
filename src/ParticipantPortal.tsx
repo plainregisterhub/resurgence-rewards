@@ -17,6 +17,9 @@ type SolanaWalletProvider = {
   connect: () => Promise<{ publicKey?: WalletPublicKey }>;
   signMessage?: (message: Uint8Array, display?: "utf8") => Promise<WalletSignResult>;
   disconnect?: () => Promise<void>;
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  off?: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
 };
 
 declare global {
@@ -57,6 +60,65 @@ export default function ParticipantPortal() {
   const [applicationStatus, setApplicationStatus] = useState("");
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const callbackHandled = useRef(false);
+
+  // Restore an already-authorized injected wallet when the portal opens inside Phantom.
+  // This keeps the participant in one browser context for connect + sign.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("phantom_callback")) return;
+    const provider = getWalletProvider();
+    if (!provider) return;
+
+    const toAddress = (candidate: unknown): string => {
+      if (candidate && typeof candidate === "object" &&
+          typeof (candidate as WalletPublicKey).toBase58 === "function") {
+        return (candidate as WalletPublicKey).toBase58();
+      }
+      return provider.publicKey?.toBase58() ?? "";
+    };
+
+    const existingAddress = provider.publicKey?.toBase58() ?? "";
+    if (existingAddress) {
+      setWalletAddress(existingAddress);
+      setNotice("Phantom wallet detected. Review the address below, then sign to submit your application.");
+    }
+
+    const handleConnect = (...args: unknown[]) => {
+      const address = toAddress(args[0]);
+      if (!address) return;
+      setWalletAddress(address);
+      setError("");
+      setNotice("Wallet connected. You can sign here without leaving Phantom's browser.");
+    };
+    const handleAccountChanged = (...args: unknown[]) => {
+      const address = args[0] == null ? "" : toAddress(args[0]);
+      setError("");
+      setApplicationStatus("");
+      setAlreadyRegistered(false);
+      if (!address) {
+        setWalletAddress("");
+        setNotice("Wallet disconnected. Connect again to continue.");
+        return;
+      }
+      setWalletAddress(address);
+      setNotice("Wallet account changed. Check the address before submitting your application.");
+    };
+    const handleDisconnect = () => {
+      setWalletAddress("");
+      setApplicationStatus("");
+      setAlreadyRegistered(false);
+      setNotice("Wallet disconnected. Connect again to continue.");
+    };
+
+    provider.on?.("connect", handleConnect);
+    provider.on?.("accountChanged", handleAccountChanged);
+    provider.on?.("disconnect", handleDisconnect);
+    return () => {
+      const remove = provider.off?.bind(provider) ?? provider.removeListener?.bind(provider);
+      remove?.("connect", handleConnect);
+      remove?.("accountChanged", handleAccountChanged);
+      remove?.("disconnect", handleDisconnect);
+    };
+  }, []);
 
   async function submitSignedApplication(address: string, nonce: string, signature: Uint8Array) {
     const { data: result, error: submitError } = await supabase.functions.invoke(
@@ -122,7 +184,7 @@ export default function ParticipantPortal() {
       try {
         setBusy(true);
         setError("");
-        setNotice("Opening Phantom in a new tab. If it does not open, this page will stay available so you can retry.");
+        setNotice("Switching to Phantom to connect your wallet. You will return here to continue.");
         const launched = launchPhantomConnect();
         if (!launched) {
           setBusy(false);
@@ -132,8 +194,8 @@ export default function ParticipantPortal() {
         }
         window.setTimeout(() => {
           setBusy((current) => current ? false : current);
-          setNotice((current) => current.startsWith("Opening Phantom")
-            ? "Still on this page? Phantom may not have opened or returned. Tap Connect Wallet to try again; no refresh is needed."
+          setNotice((current) => current.startsWith("Switching to Phantom")
+            ? "Still on this page? Phantom may not have opened or returned. Tap Connect Wallet to retry; you do not need to refresh."
             : current);
         }, 12000);
       } catch (cause) {
@@ -259,7 +321,7 @@ export default function ParticipantPortal() {
 
         <p className="eyebrow participant-eyebrow">CAMPAIGN 2026</p>
         <h1>Register your wallet.</h1>
-        <p className="participant-intro">Connect your Solana wallet and prove ownership with a signature. On mobile, the smoothest option is to open this portal inside Phantom first. Your application is sent directly to the review queue.</p>
+        <p className="participant-intro">{getWalletProvider() ? "Wallet support detected. Connect or restore your wallet here, then sign the verification message without leaving Phantom's browser." : "Connect your Solana wallet and prove ownership with a signature. On mobile, open this portal inside Phantom first so you can connect and sign in one browser. Your application then goes to the review queue."}</p>
 
         {!getWalletProvider() && (
           <a
@@ -276,7 +338,7 @@ export default function ParticipantPortal() {
         )}
         
         <div className="participant-steps">
-          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>Connect here or open Phantom from this page.</small></div></div>
+          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>On mobile, open this page inside Phantom to avoid repeated app switching.</small></div></div>
           <div className="participant-step"><span>02</span><div><strong>Sign verification message</strong><small>Proves wallet control only. No transaction is created and no SOL is transferred.</small></div></div>
           <div className="participant-step"><span>03</span><div><strong>Admin review</strong><small>Applications start as Pending. Approval does not guarantee funds; allocation rights are limited to 125 participants.</small></div></div>
         </div>
