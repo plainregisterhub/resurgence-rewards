@@ -119,17 +119,19 @@ function launch(url: URL): void {
 export function launchPhantomConnect(): void {
   const keyPair = nacl.box.keyPair();
   const state = randomState();
+  const dappPublicKey = bytesToBase58(keyPair.publicKey);
+  const dappSecretKey = toBase64(keyPair.secretKey);
   const pending: PendingRequest = {
     action: "connect",
     state,
-    dappPublicKey: bytesToBase58(keyPair.publicKey),
-    dappSecretKey: toBase64(keyPair.secretKey),
+    dappPublicKey,
+    dappSecretKey,
   };
   savePending(pending);
 
   const params = new URLSearchParams({
     app_url: window.location.origin + window.location.pathname,
-    dapp_encryption_public_key: pending.dappPublicKey,
+    dapp_encryption_public_key: dappPublicKey,
     redirect_link: currentCallbackUrl("connect", state),
     cluster: "mainnet-beta",
   });
