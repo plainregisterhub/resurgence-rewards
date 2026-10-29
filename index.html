@@ -6,9 +6,38 @@
     <meta name="theme-color" content="#0a0e16" />
     <meta name="description" content="The Resurgence rewards management portal." />
     <title>The Resurgence — Rewards Portal</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #090d14; color: #e8eef8; font-family: system-ui, sans-serif; }
+      #boot-status { display: none; margin: 24px auto; max-width: 560px; padding: 20px; border: 1px solid #334155; border-radius: 14px; background: #111827; color: #e8eef8; overflow-wrap: anywhere; }
+      #boot-status strong { display:block; margin-bottom:8px; color:#fca5a5; }
+    </style>
+    <script>
+      (function () {
+        function showBootError(message) {
+          var box = document.getElementById('boot-status');
+          if (!box) return;
+          box.style.display = 'block';
+          box.innerHTML = '<strong>The Resurgence could not start</strong><div></div><p>Please send this message to support.</p>';
+          box.querySelector('div').textContent = String(message || 'Unknown startup error');
+        }
+        window.addEventListener('error', function (event) {
+          var target = event.target;
+          if (target && target !== window && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+            showBootError('Failed to load app file: ' + (target.src || target.href || target.tagName));
+          } else if (event.message) {
+            showBootError(event.message + (event.filename ? ' (' + event.filename + ':' + event.lineno + ')' : ''));
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason;
+          showBootError(reason && reason.message ? reason.message : reason);
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot-status" role="alert"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
