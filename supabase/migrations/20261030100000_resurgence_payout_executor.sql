@@ -300,3 +300,83 @@ revoke all on function public.create_resurgence_asset_payout_plan(text, text, in
 grant execute on function public.create_resurgence_asset_payout_plan(text, text, integer, numeric, text) to authenticated;
 revoke all on function public.claim_resurgence_payout_run(uuid, integer) from public, anon, authenticated;
 grant execute on function public.claim_resurgence_payout_run(uuid, integer) to service_role;
+
+
+-- Allow an unbound, one-time SIWS challenge. It is bound to the returned wallet only
+-- after the backend verifies the exact signed message and Ed25519 signature.
+alter table public.resurgence_wallet_challenges
+  alter column wallet_address drop not null;
+
+create or replace function public.submit_resurgence_participant_application(
+  p_wallet_address text,
+  p_nonce uuid
+)
+returns table (
+  participant_id uuid,
+  participant_status text,
+  already_registered boolean
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_challenge public.resurgence_wallet_challenges%rowtype;
+  v_participant_id uuid;
+  v_status text;
+begin
+  if p_wallet_address is null
+     or p_wallet_address !~ '^[1-9A-HJ-NP-Za-km-z]{32,44}$'
+     or p_nonce is null then
+    raise exception 'A valid wallet address and challenge nonce are required.';
+  end if;
+
+  select * into v_challenge
+  from public.resurgence_wallet_challenges c
+  where c.nonce = p_nonce
+    and (c.wallet_address is null or c.wallet_address = p_wallet_address)
+  for update;
+
+  if not found or v_challenge.consumed_at is not null or v_challenge.expires_at <= now() then
+    raise exception 'The wallet verification challenge is invalid, expired, or already used.';
+  end if;
+
+  update public.resurgence_wallet_challenges
+  set consumed_at = now(),
+      wallet_address = p_wallet_address
+  where nonce = p_nonce;
+
+  select p.id, p.status
+  into v_participant_id, v_status
+  from public.participants p
+  where p.campaign_id = 'resurgence-2026'
+    and p.wallet_address = p_wallet_address;
+
+  if found then
+    return query select v_participant_id, v_status, true;
+    return;
+  end if;
+
+  begin
+    insert into public.participants (campaign_id, wallet_address, status)
+    values ('resurgence-2026', p_wallet_address, 'PENDING')
+    returning id, status into v_participant_id, v_status;
+  exception when unique_violation then
+    select p.id, p.status
+    into v_participant_id, v_status
+    from public.participants p
+    where p.campaign_id = 'resurgence-2026'
+      and p.wallet_address = p_wallet_address;
+    if not found then
+      raise;
+    end if;
+    return query select v_participant_id, v_status, true;
+    return;
+  end;
+
+  return query select v_participant_id, v_status, false;
+end;
+$$;
+
+revoke all on function public.submit_resurgence_participant_application(text, uuid) from public, anon, authenticated;
+grant execute on function public.submit_resurgence_participant_application(text, uuid) to service_role;
