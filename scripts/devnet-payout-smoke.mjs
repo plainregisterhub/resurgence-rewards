@@ -198,7 +198,7 @@ async function main() {
   await verifyAllSignatures();
 
   console.log(`PASS: all ${RECIPIENT_COUNT} SPL token recipient balances verified`);
-  console.log(`PASS: ${signatures.length} transactions confirmed on Devnet`);
+  console.log(`PASS: ${signatures.length} transactions confirmed on ${isLocal ? "the local validator" : "Devnet"}`);
   console.log(`Temporary test token mint: ${mint.toBase58()}`);
   console.log(`Finished. All ephemeral keypairs and test funds are separate from Mainnet.${isLocal ? " This is a local-validator integration test, not a public Devnet test." : ""}`);
 }
