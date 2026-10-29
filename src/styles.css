@@ -46,3 +46,35 @@
 .treasury-result-grid span{display:block;color:#7d8fa4;font-size:9px;line-height:1.5}
 .treasury-result-grid strong{display:block;margin-top:5px;color:#b9e7ff;font:600 11px 'DM Mono',monospace;overflow-wrap:anywhere}
 @media(max-width:700px){.treasury-grid{grid-template-columns:minmax(0,1fr)}.treasury-block{padding:15px 12px;border-right:0;border-bottom:1px solid #202b38}.treasury-block:last-child{border-bottom:0}.treasury-result{padding:14px 12px}.treasury-result-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}}
+
+
+/* Allocation Rights are percentage entitlements, separated from payout amounts. */
+.allocation-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:14px 0 9px}
+.allocation-summary>div{min-width:0;padding:10px;border:1px solid #263546;border-radius:8px;background:#0c141e}
+.allocation-summary span,.allocation-summary strong{display:block}
+.allocation-summary span{color:#8092a8;font-size:9px;line-height:1.4}
+.allocation-summary strong{margin-top:6px;color:#dff3ff;font:700 17px Manrope,sans-serif;letter-spacing:-.025em}
+.allocation-explainer{margin:10px 0 13px;color:#879ab0;font-size:10px;line-height:1.6}
+.allocation-rights-panel{margin-top:17px;border:1px solid #202d3d;border-radius:10px;background:#0e151f;overflow:hidden}
+.allocation-rights-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 17px;border-bottom:1px solid #202b39}
+.allocation-rights-heading h3{margin:0 0 5px;font:700 12px Manrope,sans-serif;color:#d9e6f4}
+.allocation-rights-heading p{margin:0;color:#8092a8;font-size:10px;line-height:1.5}
+.allocation-empty{padding:24px 17px;color:#8293a9;font-size:11px;line-height:1.7}
+.allocation-rights-table td{font-size:10px}
+.allocation-rights-table td code{color:#c8d8e8}
+.rights-status{display:inline-flex;align-items:center;padding:4px 7px;border-radius:5px;font:700 9px 'DM Mono',monospace;letter-spacing:.04em}
+.rights-status.active{color:#8ce1b8;background:#122c22;border:1px solid #27563f}
+.rights-status.revoked{color:#ffadad;background:#301b22;border:1px solid #63313a}
+.rights-revoke-button{display:inline-flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid #573540;border-radius:6px;background:#271922;color:#ffb4ba;font-size:9px;font-weight:700}
+.rights-revoke-button:hover{background:#3a202a}
+.rights-revoke-button:disabled{opacity:.55;cursor:wait}
+.allocation-muted{display:inline-block;max-width:180px;white-space:normal;color:#9b8d91;font-size:9px;line-height:1.45}
+.allocation-payout-block{margin-top:17px;padding:16px;border:1px solid #253647;border-radius:10px;background:linear-gradient(130deg,#121d29,#101722)}
+.allocation-fee-input{margin:8px 0 10px}
+@media(max-width:760px){
+ .allocation-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+ .allocation-summary>div{padding:8px}
+ .allocation-summary strong{font-size:14px}
+ .allocation-rights-heading{align-items:flex-start}
+ .allocation-muted{max-width:120px}
+}
