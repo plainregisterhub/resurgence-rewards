@@ -50,7 +50,6 @@ type PlanResult = {
 
 const INITIAL_MASTER_WALLET = "7jqyogrnPP9tCcTqPvzG7Ys63s5V7uDS8sCgSKhNfUFT";
 const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const LAMPORTS_PER_SOL = 1_000_000_000n;
 
 function amountToBaseUnits(value: string, decimals: number): string {
   const normalized = value.trim();
