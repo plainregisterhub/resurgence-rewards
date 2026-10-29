@@ -102,7 +102,7 @@ function savePending(value: PendingRequest): void {
 
 export function getPhantomConnection(): PhantomConnection | null {
   try {
-    const raw = localStorage.getItem(CONNECTION_KEY);
+    const raw = sessionStorage.getItem(CONNECTION_KEY);
     if (!raw) return null;
     const connection = JSON.parse(raw) as PhantomConnection;
     if (!connection.walletAddress || !connection.session || !connection.dappSecretKey || !connection.phantomEncryptionPublicKey) return null;
@@ -237,7 +237,7 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
         dappSecretKey: pending.dappSecretKey,
         phantomEncryptionPublicKey: phantomPublicKey,
       };
-      localStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
+      sessionStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
       localStorage.removeItem(PENDING_KEY);
       return { type: "connected", walletAddress: response.public_key };
     }
