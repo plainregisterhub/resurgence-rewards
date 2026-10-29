@@ -22,7 +22,8 @@ import {
 
 const RPC_URL = process.env.SOLANA_DEVNET_RPC_URL || "https://api.devnet.solana.com";
 const RECIPIENT_COUNT = 125;
-const SOL_PER_RECIPIENT = 10_000;
+// Keep each new system account rent-exempt on local validator and Devnet.
+const SOL_PER_RECIPIENT = 1_000_000;
 const TOKEN_DECIMALS = 6;
 const TOKEN_BASE_UNITS_PER_RECIPIENT = 1_000n;
 const connection = new Connection(RPC_URL, {
@@ -198,12 +199,12 @@ async function main() {
 
   console.log(`PASS: all ${RECIPIENT_COUNT} SPL token recipient balances verified`);
   console.log(`PASS: ${signatures.length} transactions confirmed on Devnet`);
-  console.log(`Temporary Devnet mint: ${mint.toBase58()}`);
+  console.log(`Temporary test token mint: ${mint.toBase58()}`);
   console.log(`Finished. All ephemeral keypairs and test funds are separate from Mainnet.${isLocal ? " This is a local-validator integration test, not a public Devnet test." : ""}`);
 }
 
 main().catch((error) => {
-  console.error("DEVNET PAYOUT TEST FAILED");
+  console.error("SOLANA PAYOUT SMOKE TEST FAILED");
   console.error(error instanceof Error ? error.stack || error.message : error);
   process.exitCode = 1;
 });
