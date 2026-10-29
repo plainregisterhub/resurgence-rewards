@@ -43,30 +43,38 @@ type PlanResult = {
   master_wallet_address: string;
   status: string;
   created_at: string;
+  asset_type: "SOL" | "TOKEN";
+  asset_mint: string | null;
+  asset_decimals: number;
 };
 
 const INITIAL_MASTER_WALLET = "7jqyogrnPP9tCcTqPvzG7Ys63s5V7uDS8sCgSKhNfUFT";
 const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const LAMPORTS_PER_SOL = 1_000_000_000n;
 
-function solToLamports(value: string): string {
+function amountToBaseUnits(value: string, decimals: number): string {
   const normalized = value.trim();
-  if (!/^\d+(\.\d{1,9})?$/.test(normalized)) {
-    throw new Error("Enter a SOL amount with up to 9 decimal places.");
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 9) {
+    throw new Error("Asset decimals must be an integer between 0 and 9.");
+  }
+  if (!/^\\d+(\\.\\d+)?$/.test(normalized)) {
+    throw new Error(`Enter an amount with up to ${decimals} decimal places.`);
   }
   const [whole, fraction = ""] = normalized.split(".");
-  const lamports = BigInt(whole) * LAMPORTS_PER_SOL + BigInt((fraction + "000000000").slice(0, 9));
-  if (lamports <= 0n) throw new Error("Eligible fees must be greater than zero.");
-  if (lamports > 600_000_000n * LAMPORTS_PER_SOL) {
-    throw new Error("The fee base exceeds the maximum supported validation range.");
+  if (fraction.length > decimals && /[^0]/.test(fraction.slice(decimals))) {
+    throw new Error(`Enter an amount with no more than ${decimals} decimal places.`);
   }
-  return lamports.toString();
+  const units = BigInt(whole) * (10n ** BigInt(decimals)) +
+    BigInt(fraction.slice(0, decimals).padEnd(decimals, "0") || "0");
+  if (units <= 0n) throw new Error("Eligible fees must be greater than zero.");
+  return units.toString();
 }
 
-function lamportsToSol(value: string | number): string {
-  const lamports = BigInt(value);
-  const whole = lamports / LAMPORTS_PER_SOL;
-  const fraction = (lamports % LAMPORTS_PER_SOL).toString().padStart(9, "0").replace(/0+$/, "");
+function baseUnitsToAmount(value: string | number, decimals: number): string {
+  const units = BigInt(String(value));
+  const scale = 10n ** BigInt(decimals);
+  const whole = units / scale;
+  if (decimals === 0) return whole.toString();
+  const fraction = (units % scale).toString().padStart(decimals, "0").replace(/0+$/, "");
   return fraction ? `${whole.toString()}.${fraction}` : whole.toString();
 }
 
@@ -86,7 +94,11 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
   const [masterWallet, setMasterWallet] = useState(INITIAL_MASTER_WALLET);
   const [savedConfig, setSavedConfig] = useState<TreasuryConfig | null>(null);
   const [rights, setRights] = useState<AllocationRight[]>([]);
-  const [eligibleFeesSol, setEligibleFeesSol] = useState("");
+  const [assetType, setAssetType] = useState<"SOL" | "TOKEN">("SOL");
+  const [assetMint, setAssetMint] = useState("");
+  const [assetDecimals, setAssetDecimals] = useState("6");
+  const [eligibleFeeBaseAmount, setEligibleFeeBaseAmount] = useState("");
+  const [executingPayout, setExecutingPayout] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [syncingRights, setSyncingRights] = useState(false);
@@ -207,9 +219,20 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
       return;
     }
 
-    let lamports: string;
+    const decimals = assetType === "SOL" ? 9 : Number(assetDecimals);
+    const mint = assetType === "TOKEN" ? assetMint.trim() : null;
+    if (assetType === "TOKEN" && (!BASE58_ADDRESS.test(mint ?? "") || mint === savedConfig.master_wallet_address)) {
+      setMessage({ type: "error", text: "Enter the actual SPL token mint address, not a wallet address." });
+      return;
+    }
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 9) {
+      setMessage({ type: "error", text: "Token decimals must be an integer from 0 to 9." });
+      return;
+    }
+
+    let baseUnits: string;
     try {
-      lamports = solToLamports(eligibleFeesSol);
+      baseUnits = amountToBaseUnits(eligibleFeeBaseAmount, decimals);
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Enter a valid eligible fee base." });
       return;
@@ -217,20 +240,70 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
 
     setCreatingPlan(true);
     try {
-      const { data, error } = await supabase.rpc("create_resurgence_multisplit_plan", {
-        p_eligible_fees_lamports: lamports,
+      const { data, error } = await supabase.rpc("create_resurgence_asset_payout_plan", {
+        p_asset_type: assetType,
+        p_asset_mint: mint,
+        p_asset_decimals: decimals,
+        p_eligible_fee_base_units: baseUnits,
         p_idempotency_key: crypto.randomUUID(),
       });
       if (error) throw new Error(error.message);
       const rows = (data ?? []) as PlanResult[];
       if (!rows[0]) throw new Error("The server did not return the payout draft.");
       setLastPlan(rows[0]);
-      setMessage({ type: "success", text: "Payout draft created from active Allocation Rights. No SOL or tokens have been transferred." });
+      setMessage({
+        type: "success",
+        text: `Payout draft created for ${rows[0].participant_count} approved recipients. No funds have moved yet.`,
+      });
       onPlanCreated?.();
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Unable to create a payout draft." });
     } finally {
       setCreatingPlan(false);
+    }
+  }
+
+  async function executePayout() {
+    if (!lastPlan || !["DRAFT", "FAILED", "PROCESSING"].includes(lastPlan.status)) return;
+    if (lastPlan.status === "PROCESSING") {
+      setMessage({ type: "error", text: "This payout run is already processing. Refresh the ledger before retrying." });
+      return;
+    }
+    setMessage(null);
+    setExecutingPayout(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("resurgence-payout-execute", {
+        body: { runId: lastPlan.run_id },
+      });
+      if (error) {
+        const context = (error as { context?: Response }).context;
+        if (context && typeof context.json === "function") {
+          try {
+            const details = await context.json() as { error?: string };
+            throw new Error(details.error || error.message);
+          } catch (cause) {
+            if (cause instanceof Error && cause.message !== "Unexpected end of JSON input") throw cause;
+            throw new Error(error.message);
+          }
+        }
+        throw new Error(error.message);
+      }
+      if (!data?.success || data?.status !== "COMPLETED") {
+        throw new Error(data?.error || "The payout executor did not confirm the full payout.");
+      }
+      setLastPlan((current) => current ? { ...current, status: "COMPLETED" } : current);
+      setMessage({
+        type: "success",
+        text: `Payout completed on ${data.cluster}. ${data.recipientCount} recipients paid across ${data.confirmedBatches} confirmed transaction batches.`,
+      });
+      onPlanCreated?.();
+    } catch (error) {
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "Payout execution failed. Review the payout ledger before retrying.",
+      });
+    } finally {
+      setExecutingPayout(false);
     }
   }
 
@@ -322,23 +395,36 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
       </div>
 
       <div className="allocation-payout-block">
-        <div className="treasury-label"><CircleDollarSign size={15} /> PAYOUT PLANNING — LATER STAGE</div>
-        <label className="treasury-field-label" htmlFor="eligible-fees">Verified eligible creator fees (SOL)</label>
+        <div className="treasury-label"><CircleDollarSign size={15} /> PAYOUT PLANNING &amp; EXECUTION</div>
+        <label className="treasury-field-label" htmlFor="payout-asset">Reward asset</label>
+        <select id="payout-asset" className="treasury-input" value={assetType} onChange={(event) => setAssetType(event.target.value as "SOL" | "TOKEN")}>
+          <option value="SOL">SOL</option>
+          <option value="TOKEN">SPL token (e.g. $DayOne)</option>
+        </select>
+        {assetType === "TOKEN" && (
+          <div className="treasury-token-fields">
+            <label className="treasury-field-label" htmlFor="payout-token-mint">SPL token mint address</label>
+            <input id="payout-token-mint" className="treasury-input mono" value={assetMint} onChange={(event) => setAssetMint(event.target.value.trim())} placeholder="Paste token mint public address" maxLength={44} autoComplete="off" spellCheck={false} />
+            <label className="treasury-field-label" htmlFor="payout-token-decimals">Mint decimals</label>
+            <input id="payout-token-decimals" className="treasury-input" type="number" inputMode="numeric" min={0} max={9} step={1} value={assetDecimals} onChange={(event) => setAssetDecimals(event.target.value)} />
+          </div>
+        )}
+        <label className="treasury-field-label" htmlFor="eligible-fees">Total eligible reward base ({assetType === "SOL" ? "SOL" : "token units"})</label>
         <input
           id="eligible-fees"
           className="treasury-input allocation-fee-input"
           inputMode="decimal"
-          value={eligibleFeesSol}
-          onChange={(event) => setEligibleFeesSol(event.target.value)}
-          placeholder="Only enter a verified fee base, e.g. 1.25"
+          value={eligibleFeeBaseAmount}
+          onChange={(event) => setEligibleFeeBaseAmount(event.target.value)}
+          placeholder={assetType === "SOL" ? "Total eligible creator fees, e.g. 1.25 SOL" : "Total reward base in this token, e.g. 1250000 tokens"}
           autoComplete="off"
         />
         <div className="treasury-formula">
-          <span>Rewards Pool maximum <strong>25%</strong></span>
+          <span>Pool cap of this base <strong>25%</strong></span>
           <span>Each active right <strong>0.2%</strong></span>
           <span>Maximum rights <strong>125</strong></span>
         </div>
-        <button className="button button-primary treasury-button" type="button" onClick={() => void createDraftPlan()} disabled={creatingPlan || loading || !savedConfig || activeRights.length === 0 || !eligibleFeesSol.trim()}>
+        <button className="button button-primary treasury-button" type="button" onClick={() => void createDraftPlan()} disabled={creatingPlan || loading || !savedConfig || activeRights.length === 0 || !eligibleFeeBaseAmount.trim() || (assetType === "TOKEN" && !assetMint.trim())}>
           {creatingPlan ? <LoaderCircle size={15} className="spin" /> : <ClipboardCheck size={15} />}
           {creatingPlan ? "Generating draft…" : "Generate payout draft"}
         </button>
@@ -346,7 +432,7 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
 
       <div className="treasury-safety">
         <AlertTriangle size={16} />
-        <span><strong>Two separate stages:</strong> Allocation Rights can exist with a zero SOL balance. A payout draft requires a verified fee base and uses active rights only. This portal does not prove Pump.fun fee routing, sign transactions, or send payments.</span>
+        <span><strong>Transfer safety:</strong> payouts are disabled until the server-side signer, cluster and Master Wallet are configured. Enter the total base in the selected asset before applying the 25% pool cap; SOL uses the eligible creator-fee base, while SPL-token payouts use that token's own reward base. The portal does not independently prove Pump.fun fee routing or perform SOL-to-token conversion.</span>
       </div>
 
       {loading && <div className="treasury-loading"><LoaderCircle size={15} className="spin" /> Loading treasury configuration…</div>}
@@ -354,14 +440,21 @@ export default function MultisplitPanel({ onPlanCreated }: { onPlanCreated?: () 
 
       {lastPlan && (
         <div className="treasury-result">
-          <div className="treasury-result-top"><div><span className="treasury-result-label">PAYOUT DRAFT</span><strong>{lastPlan.run_id.slice(0, 8).toUpperCase()}</strong></div><span className="badge badge-draft"><span className="badge-dot" />{lastPlan.status}</span></div>
+          <div className="treasury-result-top"><div><span className="treasury-result-label">PAYOUT RUN</span><strong>{lastPlan.run_id.slice(0, 8).toUpperCase()}</strong></div><span className={`badge badge-${lastPlan.status.toLowerCase()}`}><span className="badge-dot" />{lastPlan.status}</span></div>
           <div className="treasury-result-grid">
-            <div><span>Verified eligible fee base</span><strong>{lamportsToSol(lastPlan.eligible_fees_lamports)} SOL</strong></div>
-            <div><span>Rewards Pool maximum (25%)</span><strong>{lamportsToSol(lastPlan.total_pool_lamports)} SOL</strong></div>
+            <div><span>Verified eligible fee base</span><strong>{baseUnitsToAmount(lastPlan.eligible_fees_lamports, lastPlan.asset_decimals)} {lastPlan.asset_type}</strong></div>
+            <div><span>Rewards Pool maximum (25%)</span><strong>{baseUnitsToAmount(lastPlan.total_pool_lamports, lastPlan.asset_decimals)} {lastPlan.asset_type}</strong></div>
             <div><span>Active rights snapshotted</span><strong>{lastPlan.participant_count} / 125</strong></div>
-            <div><span>Planned allocation total</span><strong>{lamportsToSol(lastPlan.total_planned_lamports)} SOL</strong></div>
+            <div><span>Planned allocation total</span><strong>{baseUnitsToAmount(lastPlan.total_planned_lamports, lastPlan.asset_decimals)} {lastPlan.asset_type}</strong></div>
           </div>
-          <div className="treasury-footnote">Master Wallet snapshot: <code>{shortWallet(lastPlan.master_wallet_address)}</code>. The draft is a calculated ledger only; transaction signing and fee-routing verification are not implemented.</div>
+          {lastPlan.asset_type === "TOKEN" && lastPlan.asset_mint && <div className="treasury-footnote">Token mint: <code>{shortWallet(lastPlan.asset_mint)}</code></div>}
+          <div className="treasury-footnote">Master Wallet snapshot: <code>{shortWallet(lastPlan.master_wallet_address)}</code>. Network fees and missing token-account rent are paid by this wallet. Mainnet execution remains locked unless explicitly enabled server-side.</div>
+          {lastPlan.status !== "COMPLETED" && lastPlan.status !== "CANCELLED" && (
+            <button className="button button-primary treasury-button" type="button" onClick={() => void executePayout()} disabled={executingPayout || lastPlan.status === "PROCESSING"}>
+              {executingPayout ? <LoaderCircle size={15} className="spin" /> : <Wallet size={15} />}
+              {executingPayout ? "Processing payout batches…" : "Execute payout automatically"}
+            </button>
+          )}
         </div>
       )}
     </section>

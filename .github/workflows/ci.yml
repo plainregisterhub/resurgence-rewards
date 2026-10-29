@@ -20,3 +20,7 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run build
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check supabase/functions/resurgence-payout-execute/index.ts supabase/functions/resurgence-participant-siws-challenge/index.ts supabase/functions/resurgence-participant-siws-submit/index.ts
