@@ -137,7 +137,9 @@ Deno.serve(async (req: Request) => {
       spki.set(ed25519SpkiPrefix, 0);
       spki.set(publicKeyBytes, ed25519SpkiPrefix.length);
       const publicKey = await crypto.subtle.importKey("spki", spki, { name: "Ed25519" }, false, ["verify"]);
-      validSignature = await crypto.subtle.verify({ name: "Ed25519" }, publicKey, signature, signedMessage);
+      const signatureBuffer = signature.slice().buffer as ArrayBuffer;
+      const messageBuffer = signedMessage.slice().buffer as ArrayBuffer;
+      validSignature = await crypto.subtle.verify({ name: "Ed25519" }, publicKey, signatureBuffer, messageBuffer);
     } catch {
       validSignature = false;
     }
