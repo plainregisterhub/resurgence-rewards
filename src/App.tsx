@@ -261,9 +261,9 @@ function App() {
     <aside className="sidebar">
       <div className="brand-row sidebar-brand"><div className="brand-mark"><ShieldCheck size={22} /></div><div><span className="brand-name">THE RESURGENCE</span><span className="brand-subtitle">REWARDS OPERATIONS</span></div></div>
       <div className="side-label">WORKSPACE</div>
-      <div className="nav-item nav-item-active"><Activity size={17} /> Overview</div>
-      <div className="nav-item"><Users size={17} /> Participants <span className="nav-count">{counts.pending}</span></div>
-      <div className="nav-item"><Coins size={17} /> Allocation ledger</div>
+      <a className="nav-item nav-item-active" href="#overview"><Activity size={17} /> Overview</a>
+      <a className="nav-item" href="#participants"><Users size={17} /> Participants <span className="nav-count">{counts.pending}</span></a>
+      <a className="nav-item" href="#ledger"><Coins size={17} /> Allocation ledger</a>
       <div className="sidebar-bottom"><div className="online-dot" /><div><strong>Supabase session</strong><span>Authenticated operator</span></div></div>
     </aside>
 
@@ -273,7 +273,7 @@ function App() {
         <div className="top-actions"><span className="live-label"><span className="online-dot" /> Session active</span><button className="icon-button" onClick={() => void loadData()} aria-label="Refresh data" title="Refresh data"><RefreshCw size={17} className={dataBusy ? "spin" : ""} /></button><button className="profile-button" title={session.user.email ?? "Operator"}><span className="profile-avatar">{(session.user.email ?? "O").slice(0, 1).toUpperCase()}</span><span className="profile-email">{session.user.email}</span></button><button className="icon-button" onClick={() => void handleLogout()} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button></div>
       </header>
 
-      <section className="content">
+      <section id="overview" className="content">
         <div className="page-heading">
           <div><p className="eyebrow">MONITORING / CAMPAIGN 2026</p><h1>Operations overview</h1><p className="muted">Review wallets, inspect allocation plans, and keep an auditable record.</p></div>
           <div className="heading-status"><span className="status-pulse" /> Admin session verified</div>
@@ -292,7 +292,7 @@ function App() {
         </div>
 
         <div className="content-grid">
-          <section className="panel participants-panel">
+          <section id="participants" className="panel participants-panel">
             <div className="panel-heading"><div><h2>Participant review</h2><p>Review each wallet once before it enters the eligible set.</p></div><span className="panel-count">{counts.pending} pending</span></div>
             <form className="add-wallet-form" onSubmit={addParticipant}><div className="input-with-icon"><Wallet size={16} /><input aria-label="Solana wallet address" value={walletInput} onChange={(e) => setWalletInput(e.target.value)} placeholder="Add Solana wallet address…" minLength={32} maxLength={44} /></div><button className="button button-secondary" type="submit" disabled={addingWallet || !walletInput.trim()}><Plus size={16} />{addingWallet ? "Adding…" : "Add wallet"}</button></form>
             <div className="filter-row">{(["ALL", "PENDING", "APPROVED", "REJECTED"] as const).map((item) => <button key={item} className={filter === item ? "filter-pill filter-pill-active" : "filter-pill"} onClick={() => setFilter(item)}>{item === "ALL" ? "All wallets" : item.charAt(0) + item.slice(1).toLowerCase()}{item === "PENDING" ? <span>{counts.pending}</span> : null}</button>)}</div>
@@ -302,14 +302,14 @@ function App() {
             <div className="panel-footer">Showing up to 300 most recent participant records <span>·</span> {filteredParticipants.length} in view</div>
           </section>
 
-          <section className="panel runs-panel">
+          <section id="allocations" className="panel runs-panel">
             <div className="panel-heading"><div><h2>Allocation plans</h2><p>Recent multisplit planning ledger</p></div><div className="panel-heading-icon"><Coins size={17} /></div></div>
             {runs.length === 0 ? <div className="empty-run"><div className="empty-icon"><Activity size={19} /></div><strong>No allocation plans yet</strong><span>Future plans will appear after they are generated and reviewed.</span></div> : <div className="run-list">{runs.map((run) => <article className="run-item" key={run.id}><div className="run-head"><div><strong>{run.id.slice(0, 8).toUpperCase()}</strong><small>{dateLabel(run.created_at)}</small></div><Badge value={run.status} /></div><div className="run-metrics"><div><span>Eligible fee base</span><strong>{solLabel(run.eligible_fees_lamports)} SOL</strong></div><div><span>Pool target</span><strong>{(run.pool_bps / 100).toFixed(2)}%</strong></div><div><span>Recipients</span><strong>{run.participant_count}</strong></div></div><div className="run-allocation"><span>Planned amount</span><strong>{solLabel(run.total_planned_lamports)} SOL</strong></div></article>)}</div>}
             <div className="ledger-note"><CircleAlert size={16} /><span>Lamports are converted for display only. A planned value is not proof of a routed or confirmed on-chain reward.</span></div>
           </section>
         </div>
 
-        <section className="panel ledger-panel">
+        <section id="ledger" className="panel ledger-panel">
           <div className="panel-heading"><div><h2>Latest distribution records</h2><p>Audit view of ledger entries and transaction signatures.</p></div><span className="panel-count">Recent activity</span></div>
           <div className="table-wrap"><table><thead><tr><th>RECIPIENT WALLET</th><th>ASSET</th><th>AMOUNT</th><th>CREATED</th><th>STATUS</th><th>TRANSACTION</th></tr></thead><tbody>
             {records.length === 0 ? <tr><td colSpan={6} className="empty-cell compact-empty">No distribution ledger records yet.</td></tr> : records.map((record) => <tr key={record.id}><td><strong className="mono">{shortWallet(record.wallet_address)}</strong></td><td><span className="asset-pill">{record.asset_type}</span></td><td className="amount-cell">{record.amount == null ? "—" : Number(record.amount).toLocaleString(undefined, { maximumFractionDigits: 9 })} {record.asset_type}</td><td className="date-cell">{dateLabel(record.created_at)}</td><td><Badge value={record.status} /></td><td>{record.transaction_signature ? <a className="tx-link" href={`https://solscan.io/tx/${encodeURIComponent(record.transaction_signature)}`} target="_blank" rel="noreferrer">View tx <ExternalLink size={12} /></a> : <span className="muted">Not recorded</span>}</td></tr>)}
