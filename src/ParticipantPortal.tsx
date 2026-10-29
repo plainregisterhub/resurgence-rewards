@@ -10,11 +10,27 @@ import {
 
 type WalletPublicKey = { toBase58(): string };
 type WalletSignResult = Uint8Array | { signature: Uint8Array };
+type WalletSignInInput = {
+  domain?: string;
+  statement?: string;
+  uri?: string;
+  version?: string;
+  chainId?: string;
+  nonce?: string;
+  issuedAt?: string;
+  expirationTime?: string;
+};
+type WalletSignInOutput = {
+  account?: { address?: string; publicKey?: Uint8Array };
+  signature: Uint8Array;
+  signedMessage: Uint8Array;
+};
 type SolanaWalletProvider = {
   isPhantom?: boolean;
   publicKey?: WalletPublicKey | null;
   connect: () => Promise<{ publicKey?: WalletPublicKey }>;
   signMessage?: (message: Uint8Array, display?: "utf8") => Promise<WalletSignResult>;
+  signIn?: (input: WalletSignInInput) => Promise<WalletSignInOutput>;
   disconnect?: () => Promise<void>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   off?: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -186,6 +202,55 @@ export default function ParticipantPortal() {
     }
     return { nonce: String(challenge.nonce), message: String(challenge.message) };
   }
+ 
+  async function signInAndSubmit(provider: SolanaWalletProvider) {
+    const { data: challenge, error: challengeError } = await supabase.functions.invoke(
+      "resurgence-participant-siws-challenge",
+      { body: {} },
+    );
+    if (challengeError) throw new Error(await readFunctionError(challengeError));
+    if (!challenge?.nonce || !challenge?.input || typeof challenge.input !== "object") {
+      throw new Error("The one-step sign-in service returned an incomplete challenge. Please retry.");
+    }
+
+    const input = challenge.input as WalletSignInInput;
+    const output = await provider.signIn!(input);
+    if (!(output.signature instanceof Uint8Array) ||
+        output.signature.length !== 64 ||
+        !(output.signedMessage instanceof Uint8Array) ||
+        output.signedMessage.length < 1) {
+      throw new Error("The wallet returned an invalid sign-in response. Please retry.");
+    }
+
+    const address = output.account?.address ?? provider.publicKey?.toBase58() ?? "";
+    if (!address) throw new Error("The wallet did not return a public address for sign-in.");
+    if (output.account?.publicKey instanceof Uint8Array && output.account.publicKey.length === 32) {
+      // Wallet-standard SIWS outputs expose a public key. The backend independently
+      // binds the signature to account.address and verifies the exact signed message.
+      setWalletAddress(address);
+    }
+
+    const { data: result, error: submitError } = await supabase.functions.invoke(
+      "resurgence-participant-siws-submit",
+      { body: {
+        walletAddress: address,
+        nonce: String(challenge.nonce),
+        signature: toBase64(output.signature),
+        signedMessage: toBase64(output.signedMessage),
+      } },
+    );
+    if (submitError) throw new Error(await readFunctionError(submitError));
+    if (!result?.success || !result?.participant?.status) {
+      throw new Error("Sign-in was verified but the application response was incomplete. Please retry.");
+    }
+    const status = String(result.participant.status).toUpperCase();
+    setWalletAddress(address);
+    setApplicationStatus(status);
+    setAlreadyRegistered(Boolean(result.alreadyRegistered));
+    setNotice(result.alreadyRegistered
+      ? `This wallet is already registered. Current status: ${status.toLowerCase()}.`
+      : "Wallet verified. Your application was submitted automatically and is Pending admin review.");
+  }
 
   async function startDeepLinkVerification(address: string) {
     if (!supabaseConfigured) {
@@ -276,6 +341,10 @@ export default function ParticipantPortal() {
 
     setBusy(true);
     try {
+      if (typeof provider.signIn === "function") {
+        await signInAndSubmit(provider);
+        return;
+      }
       const connection = await provider.connect();
       const address = (connection.publicKey ?? provider.publicKey)?.toBase58() ?? "";
       if (!address) throw new Error("Phantom did not return a wallet address. Please reconnect.");
