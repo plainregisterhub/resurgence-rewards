@@ -1,7 +1,7 @@
 import nacl from "tweetnacl";
 
 const PENDING_KEY = "resurgence.phantom.pending";
-const CONNECTION_KEY = "resurgence.phantom.connection";
+const CONNECTION_KEY = "resurgence.phantom.connection.v2";
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 export type PhantomConnection = {
@@ -102,7 +102,7 @@ function savePending(value: PendingRequest): void {
 
 export function getPhantomConnection(): PhantomConnection | null {
   try {
-    const raw = sessionStorage.getItem(CONNECTION_KEY);
+    const raw = localStorage.getItem(CONNECTION_KEY);
     if (!raw) return null;
     const connection = JSON.parse(raw) as PhantomConnection;
     if (!connection.walletAddress || !connection.session || !connection.dappSecretKey || !connection.phantomEncryptionPublicKey) return null;
@@ -237,7 +237,7 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
         dappSecretKey: pending.dappSecretKey,
         phantomEncryptionPublicKey: phantomPublicKey,
       };
-      sessionStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
+      localStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
       localStorage.removeItem(PENDING_KEY);
       return { type: "connected", walletAddress: response.public_key };
     }
@@ -255,6 +255,7 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
     const signature = base58ToBytes(response.signature);
     if (signature.length !== 64) throw new Error("Phantom returned an invalid signature.");
     localStorage.removeItem(PENDING_KEY);
+    localStorage.removeItem(CONNECTION_KEY);
     return {
       type: "signed",
       walletAddress: pending.walletAddress,
