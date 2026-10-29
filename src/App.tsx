@@ -5,6 +5,7 @@ import {
   Coins, ExternalLink, LogOut, Plus, RefreshCw, ShieldCheck, Users, Wallet, X,
 } from "lucide-react";
 import { supabase, supabaseConfigured } from "./lib/supabase";
+import MultisplitPanel from "./MultisplitPanel";
 
 type Participant = {
   id: string;
@@ -264,6 +265,7 @@ function App() {
       <a className="nav-item nav-item-active" href="#overview"><Activity size={17} /> Overview</a>
       <a className="nav-item" href="#participants"><Users size={17} /> Participants <span className="nav-count">{counts.pending}</span></a>
       <a className="nav-item" href="#ledger"><Coins size={17} /> Allocation ledger</a>
+      <a className="nav-item" href="#treasury"><Wallet size={17} /> Treasury &amp; multisplit</a>
       <div className="sidebar-bottom"><div className="online-dot" /><div><strong>Supabase session</strong><span>Authenticated operator</span></div></div>
     </aside>
 
@@ -290,6 +292,8 @@ function App() {
           <article className="stat-card"><div className="stat-top"><span>Approved wallets</span><div className="stat-icon green"><Check size={17} /></div></div><div className="stat-value">{numberLabel(counts.approved)}</div><div className="stat-bottom"><span className="stat-sub">Included in eligible set</span><span className="stat-arrow"><ArrowUpRight size={14} /></span></div></article>
           <article className="stat-card"><div className="stat-top"><span>Allocation runs</span><div className="stat-icon violet"><Activity size={17} /></div></div><div className="stat-value">{numberLabel(runs.length)}</div><div className="stat-bottom"><span className="stat-sub">Latest 8 planning records</span><span className="stat-arrow"><Coins size={14} /></span></div></article>
         </div>
+
+        <MultisplitPanel onPlanCreated={() => void loadData()} />
 
         <div className="content-grid">
           <section id="participants" className="panel participants-panel">
