@@ -23,6 +23,8 @@ type DistributionRecord = {
   amount: number | string | null;
   status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
   transaction_signature: string | null;
+  cluster: "devnet" | "mainnet-beta";
+  asset_mint: string | null;
   created_at: string;
 };
 type MultisplitRun = {
@@ -33,13 +35,23 @@ type MultisplitRun = {
   participant_count: number;
   total_pool_lamports: number | string;
   total_planned_lamports: number | string;
+  asset_type: "SOL" | "TOKEN";
+  asset_mint: string | null;
+  asset_decimals: number;
+  payout_cluster: "devnet" | "mainnet-beta" | null;
   status: "DRAFT" | "APPROVED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
   created_at: string;
 };
 
 const shortWallet = (value: string) => value.length > 18 ? value.slice(0, 8) + "…" + value.slice(-6) : value;
 const dateLabel = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-const solLabel = (lamports: number | string) => (Number(lamports) / 1_000_000_000).toLocaleString(undefined, { maximumFractionDigits: 6 });
+const baseUnitLabel = (value: number | string, decimals: number) => {
+  const units = BigInt(String(value));
+  const scale = 10n ** BigInt(decimals);
+  const whole = units / scale;
+  const fraction = (units % scale).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return fraction ? whole.toString() + "." + fraction : whole.toString();
+};
 const numberLabel = (value: number) => value.toLocaleString();
 
 function Badge({ value }: { value: string }) {
@@ -110,7 +122,7 @@ function App() {
     const [participantResult, recordResult, runResult] = await Promise.all([
       supabase.from("participants").select("id,campaign_id,wallet_address,status,submitted_at,reviewed_at").order("submitted_at", { ascending: false }).limit(300),
       supabase.from("distribution_records").select("id,wallet_address,asset_type,amount,status,transaction_signature,created_at").order("created_at", { ascending: false }).limit(12),
-      supabase.from("multisplit_runs").select("id,eligible_fees_lamports,pool_bps,participant_bps,participant_count,total_pool_lamports,total_planned_lamports,status,created_at").order("created_at", { ascending: false }).limit(8),
+      supabase.from("multisplit_runs").select("id,eligible_fees_lamports,pool_bps,participant_bps,participant_count,total_pool_lamports,total_planned_lamports,asset_type,asset_mint,asset_decimals,payout_cluster,status,created_at").order("created_at", { ascending: false }).limit(8),
     ]);
     const firstError = participantResult.error || recordResult.error || runResult.error;
     if (firstError) {
@@ -252,7 +264,7 @@ function App() {
           <div className="heading-status"><span className="status-pulse" /> Admin session verified</div>
         </div>
 
-        <div className="notice-strip"><ShieldCheck size={18} /><div><strong>Transfer safety is on</strong><span>This portal does not send SOL or tokens. Allocation figures are plans, not confirmed payouts.</span></div><Badge value="READ / REVIEW" /></div>
+        <div className="notice-strip"><ShieldCheck size={18} /><div><strong>Payout executor is guarded</strong><span>Plans do not move funds. Automated transfers require a server-side signer that matches the saved Master Wallet; mainnet remains locked until explicitly enabled.</span></div><Badge value="SIGNER-GATED" /></div>
 
         {dataError && <div className="alert alert-error"><CircleAlert size={17} /><span>{dataError}</span><button className="alert-close" onClick={() => setDataError("")} aria-label="Dismiss error"><X size={16} /></button></div>}
         {toast && <div className="alert alert-success"><Check size={17} /><span>{toast}</span><button className="alert-close" onClick={() => setToast("")} aria-label="Dismiss message"><X size={16} /></button></div>}
@@ -278,7 +290,7 @@ function App() {
 
           <section id="allocations" className="panel runs-panel">
             <div className="panel-heading"><div><h2>Allocation plans</h2><p>Recent multisplit planning ledger</p></div><div className="panel-heading-icon"><Coins size={17} /></div></div>
-            {runs.length === 0 ? <div className="empty-run"><div className="empty-icon"><Activity size={19} /></div><strong>No allocation plans yet</strong><span>Future plans will appear after they are generated and reviewed.</span></div> : <div className="run-list">{runs.map((run) => <article className="run-item" key={run.id}><div className="run-head"><div><strong>{run.id.slice(0, 8).toUpperCase()}</strong><small>{dateLabel(run.created_at)}</small></div><Badge value={run.status} /></div><div className="run-metrics"><div><span>Eligible fee base</span><strong>{solLabel(run.eligible_fees_lamports)} SOL</strong></div><div><span>Pool target</span><strong>{(run.pool_bps / 100).toFixed(2)}%</strong></div><div><span>Recipients</span><strong>{run.participant_count}</strong></div></div><div className="run-allocation"><span>Planned amount</span><strong>{solLabel(run.total_planned_lamports)} SOL</strong></div></article>)}</div>}
+            {runs.length === 0 ? <div className="empty-run"><div className="empty-icon"><Activity size={19} /></div><strong>No allocation plans yet</strong><span>Future plans will appear after they are generated and reviewed.</span></div> : <div className="run-list">{runs.map((run) => <article className="run-item" key={run.id}><div className="run-head"><div><strong>{run.id.slice(0, 8).toUpperCase()}</strong><small>{dateLabel(run.created_at)}</small></div><Badge value={run.status} /></div><div className="run-metrics"><div><span>Eligible fee base</span><strong>{baseUnitLabel(run.eligible_fees_lamports, run.asset_decimals ?? 9)} {run.asset_type ?? "SOL"}</strong></div><div><span>Pool target</span><strong>{(run.pool_bps / 100).toFixed(2)}%</strong></div><div><span>Recipients</span><strong>{run.participant_count}</strong></div></div><div className="run-allocation"><span>Planned amount</span><strong>{baseUnitLabel(run.total_planned_lamports, run.asset_decimals ?? 9)} {run.asset_type ?? "SOL"}</strong></div></article>)}</div>}
             <div className="ledger-note"><CircleAlert size={16} /><span>Lamports are converted for display only. A planned value is not proof of a routed or confirmed on-chain reward.</span></div>
           </section>
         </div>
@@ -286,9 +298,9 @@ function App() {
         <section id="ledger" className="panel ledger-panel">
           <div className="panel-heading"><div><h2>Latest distribution records</h2><p>Audit view of ledger entries and transaction signatures.</p></div><span className="panel-count">Recent activity</span></div>
           <div className="table-wrap"><table><thead><tr><th>RECIPIENT WALLET</th><th>ASSET</th><th>AMOUNT</th><th>CREATED</th><th>STATUS</th><th>TRANSACTION</th></tr></thead><tbody>
-            {records.length === 0 ? <tr><td colSpan={6} className="empty-cell compact-empty">No distribution ledger records yet.</td></tr> : records.map((record) => <tr key={record.id}><td><strong className="mono">{shortWallet(record.wallet_address)}</strong></td><td><span className="asset-pill">{record.asset_type}</span></td><td className="amount-cell">{record.amount == null ? "—" : Number(record.amount).toLocaleString(undefined, { maximumFractionDigits: 9 })} {record.asset_type}</td><td className="date-cell">{dateLabel(record.created_at)}</td><td><Badge value={record.status} /></td><td>{record.transaction_signature ? <a className="tx-link" href={`https://solscan.io/tx/${encodeURIComponent(record.transaction_signature)}`} target="_blank" rel="noreferrer">View tx <ExternalLink size={12} /></a> : <span className="muted">Not recorded</span>}</td></tr>)}
+            {records.length === 0 ? <tr><td colSpan={6} className="empty-cell compact-empty">No distribution ledger records yet.</td></tr> : records.map((record) => <tr key={record.id}><td><strong className="mono">{shortWallet(record.wallet_address)}</strong></td><td><span className="asset-pill">{record.asset_type}</span></td><td className="amount-cell">{record.amount == null ? "—" : Number(record.amount).toLocaleString(undefined, { maximumFractionDigits: 9 })} {record.asset_type}</td><td className="date-cell">{dateLabel(record.created_at)}</td><td><Badge value={record.status} /></td><td>{record.transaction_signature ? <a className="tx-link" href={record.cluster === "devnet" ? `https://explorer.solana.com/tx/${encodeURIComponent(record.transaction_signature)}?cluster=devnet` : `https://solscan.io/tx/${encodeURIComponent(record.transaction_signature)}`} target="_blank" rel="noreferrer">View tx <ExternalLink size={12} /></a> : <span className="muted">Not recorded</span>}</td></tr>)}
           </tbody></table></div>
-          <div className="panel-footer">On-chain status must be independently verified against the transaction signature. This portal does not send transactions.</div>
+          <div className="panel-footer">Completed records are created only after a payout batch is confirmed. Verify the linked signature on the recorded Solana cluster.</div>
         </section>
         <footer className="app-footer"><span>THE RESURGENCE <span className="footer-separator">/</span> REWARDS OPERATIONS</span><span><span className="online-dot" /> Session protected by Supabase Auth + RLS</span></footer>
       </section>
