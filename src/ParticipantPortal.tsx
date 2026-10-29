@@ -121,8 +121,21 @@ export default function ParticipantPortal() {
     if (!provider) {
       try {
         setBusy(true);
-        setNotice("Opening Phantom. Approve the connection there, then return here to continue.");
-        launchPhantomConnect();
+        setError("");
+        setNotice("Opening Phantom in a new tab. If it does not open, this page will stay available so you can retry.");
+        const launched = launchPhantomConnect();
+        if (!launched) {
+          setBusy(false);
+          setNotice("");
+          setError("Your browser blocked the Phantom window. Allow pop-ups for this site, then tap Connect Wallet again.");
+          return;
+        }
+        window.setTimeout(() => {
+          setBusy((current) => current ? false : current);
+          setNotice((current) => current.startsWith("Opening Phantom")
+            ? "Still on this page? Phantom may not have opened or returned. Tap Connect Wallet to try again; no refresh is needed."
+            : current);
+        }, 12000);
       } catch (cause) {
         setBusy(false);
         setNotice("");
@@ -194,7 +207,19 @@ export default function ParticipantPortal() {
       if (!provider || typeof provider.signMessage !== "function") {
         if (!deepLinkConnection) throw new Error("The Phantom session is missing. Please reconnect.");
         setNotice("Opening Phantom to request your verification signature. No transaction or SOL transfer will be made.");
-        launchPhantomSignMessage(String(challenge.message), deepLinkConnection, String(challenge.nonce));
+        const launched = launchPhantomSignMessage(String(challenge.message), deepLinkConnection, String(challenge.nonce));
+        if (!launched) {
+          setBusy(false);
+          setNotice("");
+          setError("Your browser blocked the Phantom window. Allow pop-ups for this site, then try signing again.");
+          return;
+        }
+        window.setTimeout(() => {
+          setBusy((current) => current ? false : current);
+          setNotice((current) => current.startsWith("Opening Phantom to request")
+            ? "Still waiting for Phantom? If it did not open or return, tap Sign & Submit Application to retry."
+            : current);
+        }, 12000);
         return;
       }
 
@@ -237,7 +262,7 @@ export default function ParticipantPortal() {
         <p className="participant-intro">Connect your Solana wallet and prove ownership with a signature. On mobile, Connect Wallet opens Phantom automatically when available. Your application is sent directly to the review queue.</p>
 
         <div className="participant-steps">
-          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>Connect directly in a compatible browser or open Phantom from your phone browser.</small></div></div>
+          <div className="participant-step"><span>01</span><div><strong>Connect wallet</strong><small>Connect here or open Phantom from this page.</small></div></div>
           <div className="participant-step"><span>02</span><div><strong>Sign verification message</strong><small>Proves wallet control only. No transaction is created and no SOL is transferred.</small></div></div>
           <div className="participant-step"><span>03</span><div><strong>Admin review</strong><small>Applications start as Pending. Approval does not guarantee funds; allocation rights are limited to 125 participants.</small></div></div>
         </div>
