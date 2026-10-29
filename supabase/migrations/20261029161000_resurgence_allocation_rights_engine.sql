@@ -27,6 +27,14 @@ create table if not exists public.participant_allocation_rights (
 
 create index if not exists participant_allocation_rights_campaign_status_idx
   on public.participant_allocation_rights (campaign_id, status, granted_at);
+create index if not exists participant_allocation_rights_participant_id_idx
+  on public.participant_allocation_rights (participant_id);
+create index if not exists participant_allocation_rights_granted_by_idx
+  on public.participant_allocation_rights (granted_by);
+create index if not exists participant_allocation_rights_revoked_by_idx
+  on public.participant_allocation_rights (revoked_by);
+create index if not exists resurgence_treasury_config_updated_by_idx
+  on public.resurgence_treasury_config (updated_by);
 
 alter table public.participant_allocation_rights enable row level security;
 revoke all on table public.participant_allocation_rights from public, anon, authenticated;
