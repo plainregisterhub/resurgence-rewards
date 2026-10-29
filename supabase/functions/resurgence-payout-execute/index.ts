@@ -291,8 +291,11 @@ Deno.serve(async (req: Request) => {
     if (!secret) return json({ error: "Server-side payout signer is not configured." }, 503, origin);
 
     const signer = getPayoutKeypair(secret);
-    const rpcUrl = Deno.env.get("SOLANA_RPC_URL") ??
-      (cluster === "mainnet-beta" ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com");
+    const configuredRpcUrl = Deno.env.get("SOLANA_RPC_URL");
+    if (cluster === "mainnet-beta" && !configuredRpcUrl) {
+      return json({ error: "Configure a dedicated HTTPS mainnet RPC provider before enabling real payouts; the shared public endpoint is not accepted for production execution." }, 503, origin);
+    }
+    const rpcUrl = configuredRpcUrl ?? "https://api.devnet.solana.com";
     if (!rpcUrl.startsWith("https://") && !rpcUrl.startsWith("http://localhost")) {
       return json({ error: "SOLANA_RPC_URL must use HTTPS except for local development." }, 503, origin);
     }
