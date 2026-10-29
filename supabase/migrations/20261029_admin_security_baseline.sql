@@ -93,13 +93,15 @@ create policy "resurgence admins update multisplit items"
   using ((select public.is_resurgence_admin()))
   with check ((select public.is_resurgence_admin()));
 
--- Supporting indexes. Avoid recreating the existing multisplit_items(run_id, participant_id) index.
+-- Supporting indexes for RLS filters and foreign keys.
 create index if not exists idx_participants_campaign_status
   on public.participants (campaign_id, status);
 create index if not exists idx_distribution_records_participant_id
   on public.distribution_records (participant_id);
 create index if not exists idx_multisplit_runs_created_by
   on public.multisplit_runs (created_by);
+create index if not exists idx_multisplit_items_participant_id
+  on public.multisplit_items (participant_id);
 create index if not exists idx_multisplit_items_status
   on public.multisplit_items (run_id, status);
 
