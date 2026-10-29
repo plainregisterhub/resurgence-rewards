@@ -85,6 +85,7 @@ function App() {
     async function verifyAdmin() {
       if (!session) {
         setAdmin(false);
+        setCheckingAdmin(false);
         return;
       }
       setCheckingAdmin(true);
@@ -140,9 +141,14 @@ function App() {
     event.preventDefault();
     setAuthError("");
     setLoginBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) setAuthError(error.message);
-    setLoginBusy(false);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) setAuthError(error.message);
+    } catch {
+      setAuthError("Unable to sign in right now. Check your connection and try again.");
+    } finally {
+      setLoginBusy(false);
+    }
   }
 
   async function handleLogout() {
@@ -171,25 +177,44 @@ function App() {
   async function addParticipant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const wallet = walletInput.trim();
-    if (wallet.length < 32 || wallet.length > 64 || /\s/.test(wallet)) {
-      setDataError("Enter a valid-looking Solana wallet address (32–64 characters, no spaces).");
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)) {
+      setDataError("Enter a Solana address using Base58 characters (32–44 characters).");
       return;
     }
     setAddingWallet(true);
     setDataError("");
-    const { error } = await supabase.from("participants").insert({
-      wallet_address: wallet,
-      campaign_id: "resurgence-2026",
-      status: "PENDING",
-    });
-    if (error) {
-      setDataError(error.message);
-    } else {
-      setWalletInput("");
-      setToast("Wallet added to the pending review queue.");
-      await loadData();
+    try {
+      const { data: existing, error: lookupError } = await supabase
+        .from("participants")
+        .select("id")
+        .eq("campaign_id", "resurgence-2026")
+        .eq("wallet_address", wallet)
+        .maybeSingle();
+      if (lookupError) {
+        setDataError(lookupError.message);
+        return;
+      }
+      if (existing) {
+        setDataError("This wallet is already registered for this campaign.");
+        return;
+      }
+      const { error } = await supabase.from("participants").insert({
+        wallet_address: wallet,
+        campaign_id: "resurgence-2026",
+        status: "PENDING",
+      });
+      if (error) {
+        setDataError(error.code === "23505" ? "This wallet is already registered for this campaign." : error.message);
+      } else {
+        setWalletInput("");
+        setToast("Wallet added to the pending review queue.");
+        await loadData();
+      }
+    } catch {
+      setDataError("Unable to add the wallet right now. Check the connection and try again.");
+    } finally {
+      setAddingWallet(false);
     }
-    setAddingWallet(false);
   }
 
   if (!supabaseConfigured) {
@@ -245,7 +270,7 @@ function App() {
     <main className="main-panel">
       <header className="topbar">
         <div className="breadcrumb">Workspace <span>/</span> Overview</div>
-        <div className="top-actions"><span className="live-label"><span className="online-dot" /> Connected</span><button className="icon-button" onClick={() => void loadData()} aria-label="Refresh data" title="Refresh data"><RefreshCw size={17} className={dataBusy ? "spin" : ""} /></button><button className="profile-button" title={session.user.email ?? "Operator"}><span className="profile-avatar">{(session.user.email ?? "O").slice(0, 1).toUpperCase()}</span><span className="profile-email">{session.user.email}</span></button><button className="icon-button" onClick={() => void handleLogout()} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button></div>
+        <div className="top-actions"><span className="live-label"><span className="online-dot" /> Session active</span><button className="icon-button" onClick={() => void loadData()} aria-label="Refresh data" title="Refresh data"><RefreshCw size={17} className={dataBusy ? "spin" : ""} /></button><button className="profile-button" title={session.user.email ?? "Operator"}><span className="profile-avatar">{(session.user.email ?? "O").slice(0, 1).toUpperCase()}</span><span className="profile-email">{session.user.email}</span></button><button className="icon-button" onClick={() => void handleLogout()} aria-label="Sign out" title="Sign out"><LogOut size={17} /></button></div>
       </header>
 
       <section className="content">
@@ -269,7 +294,7 @@ function App() {
         <div className="content-grid">
           <section className="panel participants-panel">
             <div className="panel-heading"><div><h2>Participant review</h2><p>Review each wallet once before it enters the eligible set.</p></div><span className="panel-count">{counts.pending} pending</span></div>
-            <form className="add-wallet-form" onSubmit={addParticipant}><div className="input-with-icon"><Wallet size={16} /><input aria-label="Solana wallet address" value={walletInput} onChange={(e) => setWalletInput(e.target.value)} placeholder="Add Solana wallet address…" minLength={32} maxLength={64} /></div><button className="button button-secondary" type="submit" disabled={addingWallet || !walletInput.trim()}><Plus size={16} />{addingWallet ? "Adding…" : "Add wallet"}</button></form>
+            <form className="add-wallet-form" onSubmit={addParticipant}><div className="input-with-icon"><Wallet size={16} /><input aria-label="Solana wallet address" value={walletInput} onChange={(e) => setWalletInput(e.target.value)} placeholder="Add Solana wallet address…" minLength={32} maxLength={44} /></div><button className="button button-secondary" type="submit" disabled={addingWallet || !walletInput.trim()}><Plus size={16} />{addingWallet ? "Adding…" : "Add wallet"}</button></form>
             <div className="filter-row">{(["ALL", "PENDING", "APPROVED", "REJECTED"] as const).map((item) => <button key={item} className={filter === item ? "filter-pill filter-pill-active" : "filter-pill"} onClick={() => setFilter(item)}>{item === "ALL" ? "All wallets" : item.charAt(0) + item.slice(1).toLowerCase()}{item === "PENDING" ? <span>{counts.pending}</span> : null}</button>)}</div>
             <div className="table-wrap"><table><thead><tr><th>WALLET</th><th>SUBMITTED</th><th>STATUS</th><th className="right-align">REVIEW</th></tr></thead><tbody>
               {dataBusy && participants.length === 0 ? <tr><td colSpan={4} className="empty-cell">Loading wallet records…</td></tr> : filteredParticipants.length === 0 ? <tr><td colSpan={4} className="empty-cell"><div className="empty-icon"><Users size={19} /></div><strong>No wallets in this view</strong><span>New entries will appear here when added.</span></td></tr> : filteredParticipants.map((person) => <tr key={person.id}><td><div className="wallet-cell"><span className="wallet-token"><Wallet size={14} /></span><span><strong>{shortWallet(person.wallet_address)}</strong><small>{person.campaign_id}</small></span><button className="copy-link" title="Open Solscan address" onClick={() => window.open(`https://solscan.io/account/${encodeURIComponent(person.wallet_address)}`, "_blank", "noopener,noreferrer")}><ExternalLink size={13} /></button></div></td><td className="date-cell">{dateLabel(person.submitted_at)}</td><td><Badge value={person.status} /></td><td className="right-align">{person.status === "PENDING" ? <div className="review-actions"><button className="review-approve" disabled={actionId === person.id} onClick={() => void reviewParticipant(person, "APPROVED")} title="Approve wallet" aria-label="Approve wallet"><Check size={15} /></button><button className="review-reject" disabled={actionId === person.id} onClick={() => void reviewParticipant(person, "REJECTED")} title="Reject wallet" aria-label="Reject wallet"><X size={15} /></button></div> : <span className="reviewed-label">{person.reviewed_at ? "Reviewed" : "—"}</span>}</td></tr>)}
