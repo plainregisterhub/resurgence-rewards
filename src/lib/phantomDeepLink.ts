@@ -89,7 +89,7 @@ function currentCallbackUrl(action: PendingRequest["action"], state: string): st
 
 function getPending(): PendingRequest | null {
   try {
-    const value = sessionStorage.getItem(PENDING_KEY);
+    const value = localStorage.getItem(PENDING_KEY);
     return value ? JSON.parse(value) as PendingRequest : null;
   } catch {
     return null;
@@ -97,12 +97,12 @@ function getPending(): PendingRequest | null {
 }
 
 function savePending(value: PendingRequest): void {
-  sessionStorage.setItem(PENDING_KEY, JSON.stringify(value));
+  localStorage.setItem(PENDING_KEY, JSON.stringify(value));
 }
 
 export function getPhantomConnection(): PhantomConnection | null {
   try {
-    const raw = sessionStorage.getItem(CONNECTION_KEY);
+    const raw = localStorage.getItem(CONNECTION_KEY);
     if (!raw) return null;
     const connection = JSON.parse(raw) as PhantomConnection;
     if (!connection.walletAddress || !connection.session || !connection.dappSecretKey || !connection.phantomEncryptionPublicKey) return null;
@@ -113,14 +113,15 @@ export function getPhantomConnection(): PhantomConnection | null {
 }
 
 function launch(url: URL): boolean {
-  // Keep the portal open so a failed app handoff never strands the participant
-  // on phantom.app or leaves the Connect button permanently disabled.
-  const popup = window.open(url.toString(), "_blank");
-  if (popup) {
-    try { popup.opener = null; } catch { /* Browser may make opener read-only. */ }
+  // Navigate the current tab so Phantom's redirect returns to the same portal
+  // context. The pending state is also kept in localStorage to survive mobile
+  // browser tab/app handoffs.
+  try {
+    window.location.assign(url.toString());
     return true;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 export function launchPhantomConnect(): boolean {
@@ -203,20 +204,20 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
   cleanCallbackUrl();
 
   if (!pending || pending.action !== action || !returnedState || returnedState !== pending.state) {
-    sessionStorage.removeItem(PENDING_KEY);
+    localStorage.removeItem(PENDING_KEY);
     return { type: "error", message: "This Phantom response could not be matched to the request. Please connect again." };
   }
 
   const errorCode = url.searchParams.get("errorCode");
   if (errorCode) {
-    sessionStorage.removeItem(PENDING_KEY);
+    localStorage.removeItem(PENDING_KEY);
     return { type: "error", message: url.searchParams.get("errorMessage") || "The wallet request was cancelled or rejected." };
   }
 
   const nonce = url.searchParams.get("nonce");
   const data = url.searchParams.get("data");
   if (!nonce || !data) {
-    sessionStorage.removeItem(PENDING_KEY);
+    localStorage.removeItem(PENDING_KEY);
     return { type: "error", message: "Phantom returned an incomplete response. Please try again." };
   }
 
@@ -236,8 +237,8 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
         dappSecretKey: pending.dappSecretKey,
         phantomEncryptionPublicKey: phantomPublicKey,
       };
-      sessionStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
-      sessionStorage.removeItem(PENDING_KEY);
+      localStorage.setItem(CONNECTION_KEY, JSON.stringify(connection));
+      localStorage.removeItem(PENDING_KEY);
       return { type: "connected", walletAddress: response.public_key };
     }
 
@@ -253,7 +254,7 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
     if (!response.signature) throw new Error("Phantom did not return a message signature.");
     const signature = base58ToBytes(response.signature);
     if (signature.length !== 64) throw new Error("Phantom returned an invalid signature.");
-    sessionStorage.removeItem(PENDING_KEY);
+    localStorage.removeItem(PENDING_KEY);
     return {
       type: "signed",
       walletAddress: pending.walletAddress,
@@ -261,7 +262,7 @@ export async function consumePhantomCallback(): Promise<PhantomCallbackResult | 
       signature,
     };
   } catch (cause) {
-    sessionStorage.removeItem(PENDING_KEY);
+    localStorage.removeItem(PENDING_KEY);
     return {
       type: "error",
       message: cause instanceof Error ? cause.message : "Unable to finish the Phantom request. Please try again.",
